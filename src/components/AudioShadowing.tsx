@@ -94,6 +94,8 @@ export function AudioShadowing() {
     const success = await updateGenerationTitle(id, newTitle);
     if (success) {
       setHistory(prev => prev.map(h => h.id === id ? { ...h, title: newTitle } : h));
+    } else {
+      setError('Failed to save title. Please check your Supabase UPDATE policy.');
     }
     setEditingTitleId(null);
   };
