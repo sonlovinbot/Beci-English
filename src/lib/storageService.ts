@@ -3,6 +3,7 @@ import { pcmBase64ToWavBlob } from './audioUtils';
 
 export interface AudioGeneration {
   id: string;
+  title: string;
   text: string;
   voice: string;
   style: string;
@@ -15,6 +16,7 @@ export interface AudioGeneration {
  * Save a new audio generation to Supabase (DB + Storage).
  */
 export async function saveGeneration(
+  title: string,
   text: string,
   voice: string,
   style: string,
@@ -49,6 +51,7 @@ export async function saveGeneration(
     const { data, error: dbError } = await supabase
       .from('audio_generations')
       .insert({
+        title,
         text,
         voice,
         style,

@@ -1,7 +1,7 @@
 import { useState, useRef, ChangeEvent, useEffect, MouseEvent, ClipboardEvent } from 'react';
 import { Play, Loader2, Image as ImageIcon, Volume2, Settings2, BookOpen, User, Headphones, History, Trash2, Volume1, Mic } from 'lucide-react';
 import { motion } from 'motion/react';
-import { extractTextFromImage, generateAudio } from '../lib/gemini';
+import { extractTextFromImage, generateAudio, suggestTitle } from '../lib/gemini';
 import { pcmBase64ToWavBlob } from '../lib/audioUtils';
 import { ShadowingPlayer } from './ShadowingPlayer';
 import {
@@ -23,6 +23,7 @@ const STYLES = [
 
 export function AudioShadowing() {
   const [text, setText] = useState('');
+  const [title, setTitle] = useState('');
   const [voice, setVoice] = useState('Kore');
   const [style, setStyle] = useState('');
   const [isExtracting, setIsExtracting] = useState(false);
@@ -51,8 +52,8 @@ export function AudioShadowing() {
     fetchHistory();
   }, []);
 
-  const handleSaveGeneration = async (newText: string, newVoice: string, newStyle: string, base64Audio: string) => {
-    const saved = await saveGeneration(newText, newVoice, newStyle, base64Audio);
+  const handleSaveGeneration = async (newTitle: string, newText: string, newVoice: string, newStyle: string, base64Audio: string) => {
+    const saved = await saveGeneration(newTitle, newText, newVoice, newStyle, base64Audio);
     if (saved) {
       setHistory(prev => [saved, ...prev]);
     }
@@ -60,6 +61,7 @@ export function AudioShadowing() {
 
   const loadHistoryItem = (item: AudioGeneration) => {
     setText(item.text);
+    setTitle(item.title || '');
     setVoice(item.voice);
     setStyle(item.style);
     if (item.audio_storage_path) {
@@ -87,7 +89,10 @@ export function AudioShadowing() {
     setError(null);
     try {
       const extractedText = await extractTextFromImage(file);
-      setText(prev => prev ? prev + '\n\n' + extractedText : extractedText);
+      // Clear previous content and audio, replace with new extracted text
+      setText(extractedText);
+      setTitle('');
+      setAudioUrl(null);
     } catch (err) {
       setError('Failed to extract text from image. Please try again.');
       console.error(err);
@@ -164,15 +169,22 @@ export function AudioShadowing() {
     setAudioUrl(null);
 
     try {
-      const base64Audio = await generateAudio(text, voice, style);
-      
+      // Generate audio and suggest title in parallel
+      const [base64Audio, suggested] = await Promise.all([
+        generateAudio(text, voice, style),
+        title.trim() ? Promise.resolve(title) : suggestTitle(text),
+      ]);
+
+      const suggestedTitle = title.trim() || suggested;
+      setTitle(suggestedTitle);
+
       const blob = pcmBase64ToWavBlob(base64Audio);
       const url = URL.createObjectURL(blob);
-      
+
       setAudioUrl(url);
-      
+
       // Save to Supabase (async, don't block UI)
-      handleSaveGeneration(text, voice, style, base64Audio);
+      handleSaveGeneration(suggestedTitle, text, voice, style, base64Audio);
     } catch (err) {
       setError('Failed to generate audio. Please try again.');
       console.error(err);
@@ -297,6 +309,19 @@ export function AudioShadowing() {
                 </select>
               </div>
 
+              <div className="mt-2">
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Lesson Title
+                </label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Auto-suggested when you generate audio..."
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm"
+                />
+              </div>
+
               <button
                 onClick={handleGenerateAudio}
                 disabled={isGenerating || !text.trim()}
@@ -325,9 +350,9 @@ export function AudioShadowing() {
               className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-md p-4 md:p-6 text-white"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-medium flex items-center gap-2">
-                  <Play size={18} className="fill-white" />
-                  Ready to Shadow
+                <h3 className="font-medium flex items-center gap-2 min-w-0">
+                  <Play size={18} className="fill-white shrink-0" />
+                  <span className="truncate">{title || 'Ready to Shadow'}</span>
                 </h3>
                 <button
                   onClick={() => openShadowingMode(text, audioUrl)}
@@ -370,15 +395,18 @@ export function AudioShadowing() {
                 className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer group flex flex-col"
               >
                 <div className="flex justify-between items-start mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="bg-indigo-100 text-indigo-700 text-xs font-semibold px-2 py-1 rounded-md">
-                      {item.voice}
-                    </span>
-                    {item.style && (
-                      <span className="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded-md truncate max-w-[100px]">
-                        {STYLES.find(s => s.value === item.style)?.label || 'Custom'}
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-semibold text-slate-800 text-sm truncate mb-1">{item.title || 'Untitled Lesson'}</h4>
+                    <div className="flex items-center gap-2">
+                      <span className="bg-indigo-100 text-indigo-700 text-xs font-semibold px-2 py-1 rounded-md">
+                        {item.voice}
                       </span>
-                    )}
+                      {item.style && (
+                        <span className="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded-md truncate max-w-[100px]">
+                          {STYLES.find(s => s.value === item.style)?.label || 'Custom'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <button 
                     onClick={(e) => handleDeleteHistoryItem(item.id, item.audio_storage_path, e)}

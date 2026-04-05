@@ -52,6 +52,19 @@ export async function getPhonetics(text: string): Promise<string[]> {
   }
 }
 
+export async function suggestTitle(text: string): Promise<string> {
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Suggest a short, descriptive title (max 6 words) for this English lesson/audio based on the text content. Return ONLY the title text, nothing else. Text: "${text.slice(0, 500)}"`,
+    });
+    return (response.text || "Untitled Lesson").trim();
+  } catch (error) {
+    console.error("Failed to suggest title", error);
+    return "Untitled Lesson";
+  }
+}
+
 export async function generateAudio(text: string, voice: string, style: string): Promise<string> {
   const prompt = style ? `Say ${style}: ${text}` : text;
   
