@@ -55,11 +55,13 @@ export function AudioShadowing() {
     fetchHistory();
   }, []);
 
-  const handleSaveGeneration = async (newTitle: string, newText: string, newVoice: string, newStyle: string, base64Audio: string) => {
+  const handleSaveGeneration = async (newTitle: string, newText: string, newVoice: string, newStyle: string, base64Audio: string): Promise<boolean> => {
     const saved = await saveGeneration(newTitle, newText, newVoice, newStyle, base64Audio);
     if (saved) {
       setHistory(prev => [saved, ...prev]);
+      return true;
     }
+    return false;
   };
 
   const loadHistoryItem = (item: AudioGeneration) => {
@@ -204,8 +206,11 @@ export function AudioShadowing() {
 
       setAudioUrl(url);
 
-      // Save to Supabase (async, don't block UI)
-      handleSaveGeneration(suggestedTitle, text, voice, style, base64Audio);
+      // Save to Supabase and show error if it fails
+      const saved = await handleSaveGeneration(suggestedTitle, text, voice, style, base64Audio);
+      if (!saved) {
+        setError('Audio generated but failed to save. Check console for details.');
+      }
     } catch (err) {
       setError('Failed to generate audio. Please try again.');
       console.error(err);

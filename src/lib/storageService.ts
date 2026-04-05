@@ -48,18 +48,33 @@ export async function saveGeneration(
     }
 
     // 3. Insert row into database
-    const { data, error: dbError } = await supabase
+    const row = {
+      title,
+      text,
+      voice,
+      style,
+      audio_storage_path: uploadError ? null : storagePath,
+      user_id: user.id,
+    };
+
+    let { data, error: dbError } = await supabase
       .from('audio_generations')
-      .insert({
-        title,
-        text,
-        voice,
-        style,
-        audio_storage_path: uploadError ? null : storagePath,
-        user_id: user.id,
-      })
+      .insert(row)
       .select()
       .single();
+
+    // If title column doesn't exist yet, retry without it
+    if (dbError && dbError.message?.includes('title')) {
+      console.warn('title column not found, retrying without it');
+      const { title: _unused, ...rowWithoutTitle } = row;
+      const retry = await supabase
+        .from('audio_generations')
+        .insert(rowWithoutTitle)
+        .select()
+        .single();
+      data = retry.data;
+      dbError = retry.error;
+    }
 
     if (dbError) {
       console.error('DB insert failed:', dbError);
