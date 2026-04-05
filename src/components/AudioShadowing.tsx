@@ -1,5 +1,5 @@
 import { useState, useRef, ChangeEvent, useEffect, MouseEvent, ClipboardEvent } from 'react';
-import { Play, Loader2, Image as ImageIcon, Volume2, Settings2, BookOpen, User, Headphones, History, Trash2, Volume1, Mic } from 'lucide-react';
+import { Play, Loader2, Image as ImageIcon, Volume2, Settings2, BookOpen, User, Headphones, History, Trash2, Volume1, Mic, Pencil, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { extractTextFromImage, generateAudio, suggestTitle } from '../lib/gemini';
 import { pcmBase64ToWavBlob } from '../lib/audioUtils';
@@ -8,6 +8,7 @@ import {
   saveGeneration,
   loadHistory,
   deleteGeneration,
+  updateGenerationTitle,
   getAudioPublicUrl,
   type AudioGeneration,
 } from '../lib/storageService';
@@ -37,6 +38,8 @@ export function AudioShadowing() {
   
   const [isShadowingMode, setIsShadowingMode] = useState(false);
   const [shadowingData, setShadowingData] = useState<{text: string, audioUrl: string} | null>(null);
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  const [editingTitleValue, setEditingTitleValue] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -77,6 +80,22 @@ export function AudioShadowing() {
     if (success) {
       setHistory(prev => prev.filter(h => h.id !== id));
     }
+  };
+
+  const handleStartEditTitle = (item: AudioGeneration, e: MouseEvent) => {
+    e.stopPropagation();
+    setEditingTitleId(item.id);
+    setEditingTitleValue(item.title || '');
+  };
+
+  const handleSaveEditTitle = async (id: string, e: MouseEvent) => {
+    e.stopPropagation();
+    const newTitle = editingTitleValue.trim() || 'Untitled Lesson';
+    const success = await updateGenerationTitle(id, newTitle);
+    if (success) {
+      setHistory(prev => prev.map(h => h.id === id ? { ...h, title: newTitle } : h));
+    }
+    setEditingTitleId(null);
   };
 
   const openShadowingMode = (textToShadow: string, urlToShadow: string) => {
@@ -396,7 +415,36 @@ export function AudioShadowing() {
               >
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-semibold text-slate-800 text-sm truncate mb-1">{item.title || 'Untitled Lesson'}</h4>
+                    {editingTitleId === item.id ? (
+                      <div className="flex items-center gap-1 mb-1" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="text"
+                          value={editingTitleValue}
+                          onChange={(e) => setEditingTitleValue(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEditTitle(item.id, e as unknown as MouseEvent); }}
+                          className="flex-1 text-sm font-semibold text-slate-800 border border-indigo-300 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          autoFocus
+                        />
+                        <button
+                          onClick={(e) => handleSaveEditTitle(item.id, e)}
+                          className="text-green-600 hover:text-green-700 p-0.5"
+                          title="Save"
+                        >
+                          <Check size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 mb-1 group/title">
+                        <h4 className="font-semibold text-slate-800 text-sm truncate">{item.title || 'Untitled Lesson'}</h4>
+                        <button
+                          onClick={(e) => handleStartEditTitle(item, e)}
+                          className="text-slate-300 hover:text-indigo-500 opacity-0 group-hover/title:opacity-100 transition-opacity p-0.5 shrink-0"
+                          title="Edit title"
+                        >
+                          <Pencil size={12} />
+                        </button>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <span className="bg-indigo-100 text-indigo-700 text-xs font-semibold px-2 py-1 rounded-md">
                         {item.voice}
@@ -408,7 +456,7 @@ export function AudioShadowing() {
                       )}
                     </div>
                   </div>
-                  <button 
+                  <button
                     onClick={(e) => handleDeleteHistoryItem(item.id, item.audio_storage_path, e)}
                     className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
                     title="Delete"

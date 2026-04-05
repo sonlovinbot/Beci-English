@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Play, Pause, RotateCcw, Repeat, Mic, Square, X } from 'lucide-react';
-import { getPhonetics } from '../lib/gemini';
+import { getPhonetics, getWordTimings, type WordTiming } from '../lib/gemini';
 
 interface ShadowingPlayerProps {
   text: string;
@@ -18,15 +18,17 @@ export function ShadowingPlayer({ text, audioUrl, onClose }: ShadowingPlayerProp
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const [phonetics, setPhonetics] = useState<string[]>([]);
   const [isLoadingPhonetics, setIsLoadingPhonetics] = useState(true);
-  
+  const [wordTimings, setWordTimings] = useState<WordTiming[]>([]);
+  const [timingsReady, setTimingsReady] = useState(false);
+
   const audioRef = useRef<HTMLAudioElement>(null);
   const recordedAudioRef = useRef<HTMLAudioElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  // Split text into words, preserving punctuation attached to words for display
   const words = text.split(/\s+/).filter(w => w.length > 0);
 
+  // Load phonetics on mount
   useEffect(() => {
     let isMounted = true;
     setIsLoadingPhonetics(true);
@@ -38,6 +40,19 @@ export function ShadowingPlayer({ text, audioUrl, onClose }: ShadowingPlayerProp
     });
     return () => { isMounted = false; };
   }, [text]);
+
+  // Generate word timings once we know the audio duration
+  useEffect(() => {
+    if (duration <= 0 || timingsReady) return;
+    let isMounted = true;
+    getWordTimings(text, duration).then(timings => {
+      if (isMounted && timings.length > 0) {
+        setWordTimings(timings);
+      }
+      if (isMounted) setTimingsReady(true);
+    });
+    return () => { isMounted = false; };
+  }, [duration, text, timingsReady]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -114,8 +129,7 @@ export function ShadowingPlayer({ text, audioUrl, onClose }: ShadowingPlayerProp
         mediaRecorder.start();
         setIsRecording(true);
         setRecordedAudioUrl(null);
-        
-        // Auto play original audio when recording starts
+
         if (audioRef.current) {
           audioRef.current.currentTime = 0;
           audioRef.current.play();
@@ -128,22 +142,47 @@ export function ShadowingPlayer({ text, audioUrl, onClose }: ShadowingPlayerProp
     }
   };
 
-  // Estimate word timings based on character length for better accuracy
-  const totalChars = words.reduce((acc, word) => acc + word.length, 0);
-  const charsPerSecond = duration > 0 ? totalChars / duration : 0;
-  const currentTotalChars = charsPerSecond * currentTime;
-  
+  // Determine current word index using AI-generated timings or fallback
+  const adjustedTime = playbackRate !== 1 ? currentTime : currentTime;
   let currentWordIndex = -1;
-  let charCount = 0;
-  for (let i = 0; i < words.length; i++) {
-    charCount += words[i].length;
-    if (currentTotalChars <= charCount) {
-      currentWordIndex = i;
-      break;
+
+  if (wordTimings.length > 0) {
+    // Use AI word timings - account for playback rate
+    for (let i = 0; i < wordTimings.length; i++) {
+      const timing = wordTimings[i];
+      if (adjustedTime >= timing.start && adjustedTime <= timing.end) {
+        currentWordIndex = i;
+        break;
+      }
+      // If between words, show the next word
+      if (i < wordTimings.length - 1 && adjustedTime > timing.end && adjustedTime < wordTimings[i + 1].start) {
+        currentWordIndex = i;
+        break;
+      }
     }
-  }
-  if (currentWordIndex === -1 && words.length > 0) {
-    currentWordIndex = words.length - 1;
+    // If past all timings, show last word
+    if (currentWordIndex === -1 && wordTimings.length > 0 && adjustedTime > 0) {
+      const last = wordTimings[wordTimings.length - 1];
+      if (adjustedTime >= last.start) {
+        currentWordIndex = wordTimings.length - 1;
+      }
+    }
+  } else {
+    // Fallback: character-based estimation
+    const totalChars = words.reduce((acc, word) => acc + word.length, 0);
+    const charsPerSecond = duration > 0 ? totalChars / duration : 0;
+    const currentTotalChars = charsPerSecond * currentTime;
+    let charCount = 0;
+    for (let i = 0; i < words.length; i++) {
+      charCount += words[i].length;
+      if (currentTotalChars <= charCount) {
+        currentWordIndex = i;
+        break;
+      }
+    }
+    if (currentWordIndex === -1 && words.length > 0) {
+      currentWordIndex = words.length - 1;
+    }
   }
 
   const currentWordRef = useRef<HTMLDivElement>(null);
@@ -177,14 +216,14 @@ export function ShadowingPlayer({ text, audioUrl, onClose }: ShadowingPlayerProp
               const isCurrent = index === currentWordIndex;
               const isPast = index < currentWordIndex;
               return (
-                <div 
-                  key={index} 
+                <div
+                  key={index}
                   ref={isCurrent ? currentWordRef : null}
                   className="flex flex-col items-center"
                 >
-                  <span 
+                  <span
                     className={`transition-colors duration-200 px-1 rounded-md ${
-                      isCurrent ? 'text-indigo-400 bg-indigo-500/10' : 
+                      isCurrent ? 'text-indigo-400 bg-indigo-500/10' :
                       isPast ? 'text-slate-200' : 'text-slate-500'
                     }`}
                   >
@@ -216,7 +255,7 @@ export function ShadowingPlayer({ text, audioUrl, onClose }: ShadowingPlayerProp
                      audioRef.current.currentTime = pos * duration;
                    }
                  }}>
-              <div 
+              <div
                 className="absolute top-0 left-0 h-full bg-indigo-500 transition-all duration-100"
                 style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}
               />
@@ -229,30 +268,30 @@ export function ShadowingPlayer({ text, audioUrl, onClose }: ShadowingPlayerProp
           {/* Buttons */}
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <button 
+              <button
                 onClick={() => setPlaybackRate(r => r === 1 ? 0.75 : r === 0.75 ? 0.5 : 1)}
                 className="text-slate-400 hover:text-white font-medium w-12 transition-colors"
               >
                 {playbackRate}x
               </button>
-              <button 
+              <button
                 onClick={() => setIsLooping(!isLooping)}
                 className={`p-2 rounded-full transition-colors ${isLooping ? 'text-indigo-400 bg-indigo-400/10' : 'text-slate-400 hover:text-white'}`}
-                title="Lặp lại"
+                title="Loop"
               >
                 <Repeat size={20} />
               </button>
             </div>
 
             <div className="flex items-center gap-6">
-              <button 
+              <button
                 onClick={restart}
                 className="p-3 text-slate-400 hover:text-white transition-colors"
-                title="Phát lại từ đầu"
+                title="Restart"
               >
                 <RotateCcw size={24} />
               </button>
-              <button 
+              <button
                 onClick={togglePlay}
                 className="p-4 bg-white text-slate-900 rounded-full hover:scale-105 transition-transform"
               >
@@ -262,7 +301,7 @@ export function ShadowingPlayer({ text, audioUrl, onClose }: ShadowingPlayerProp
 
             <div className="flex items-center gap-4">
               {recordedAudioUrl && (
-                <button 
+                <button
                   onClick={() => {
                     if (recordedAudioRef.current) {
                       recordedAudioRef.current.play();
@@ -270,32 +309,32 @@ export function ShadowingPlayer({ text, audioUrl, onClose }: ShadowingPlayerProp
                   }}
                   className="flex items-center gap-2 px-4 py-2 rounded-full border border-indigo-500 text-indigo-400 hover:bg-indigo-500/10 transition-colors text-sm font-medium"
                 >
-                  <Play size={16} /> Phát lại ghi âm
+                  <Play size={16} /> Play Recording
                 </button>
               )}
-              <button 
+              <button
                 onClick={toggleRecording}
                 className={`flex items-center gap-2 px-6 py-3 rounded-full font-medium transition-all ${
-                  isRecording 
-                    ? 'bg-red-500 text-white animate-pulse' 
+                  isRecording
+                    ? 'bg-red-500 text-white animate-pulse'
                     : 'bg-indigo-600 hover:bg-indigo-500 text-white'
                 }`}
               >
                 {isRecording ? <Square size={18} className="fill-white" /> : <Mic size={18} />}
-                {isRecording ? 'Đang ghi âm...' : 'Ghi âm'}
+                {isRecording ? 'Recording...' : 'Record'}
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      <audio 
-        ref={audioRef} 
-        src={audioUrl} 
+      <audio
+        ref={audioRef}
+        src={audioUrl}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleEnded}
-        className="hidden" 
+        className="hidden"
       />
       {recordedAudioUrl && <audio ref={recordedAudioRef} src={recordedAudioUrl} className="hidden" />}
     </div>

@@ -17,7 +17,7 @@ export async function extractTextFromImage(file: File): Promise<string> {
         };
         
         const textPart = {
-          text: "Extract all the text from this image. Only return the extracted text, nothing else. Preserve the original formatting as much as possible.",
+          text: "Extract all the text from this image. Return ONLY plain text, no markdown formatting (no #, *, **, `, ```, -, > or any other markdown symbols). Preserve line breaks and paragraph spacing but nothing else. Do not add any commentary.",
         };
         
         const response = await ai.models.generateContent({
@@ -25,7 +25,21 @@ export async function extractTextFromImage(file: File): Promise<string> {
           contents: { parts: [imagePart, textPart] },
         });
         
-        resolve(response.text || "");
+        const raw = response.text || "";
+        // Strip any markdown formatting that Gemini might still add
+        const plain = raw
+          .replace(/```[\s\S]*?```/g, '')     // code blocks
+          .replace(/`([^`]+)`/g, '$1')         // inline code
+          .replace(/^#{1,6}\s+/gm, '')         // headings
+          .replace(/\*\*([^*]+)\*\*/g, '$1')   // bold
+          .replace(/\*([^*]+)\*/g, '$1')       // italic
+          .replace(/__([^_]+)__/g, '$1')       // bold alt
+          .replace(/_([^_]+)_/g, '$1')         // italic alt
+          .replace(/^>\s+/gm, '')              // blockquotes
+          .replace(/^[-*+]\s+/gm, '')          // unordered lists
+          .replace(/^\d+\.\s+/gm, '')          // ordered lists
+          .trim();
+        resolve(plain);
       } catch (error) {
         reject(error);
       }
@@ -48,6 +62,46 @@ export async function getPhonetics(text: string): Promise<string[]> {
     return Array.isArray(result) ? result : [];
   } catch (error) {
     console.error("Failed to get phonetics", error);
+    return [];
+  }
+}
+
+export interface WordTiming {
+  word: string;
+  start: number;
+  end: number;
+}
+
+export async function getWordTimings(text: string, audioDuration: number): Promise<WordTiming[]> {
+  try {
+    const words = text.split(/\s+/).filter(w => w.length > 0);
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `You are an expert at estimating speech timing. Given the following English text that is read aloud in ${audioDuration.toFixed(1)} seconds total, estimate the start and end time (in seconds) for each word.
+
+Consider that:
+- Common short words (the, a, is, it, in, of, to, and, for) are spoken quickly (~0.15-0.25s)
+- Medium words (2-3 syllables) take ~0.3-0.5s
+- Long words (4+ syllables) take ~0.5-0.8s
+- Punctuation (periods, commas) adds natural pauses (~0.2-0.5s after the word)
+- Paragraph breaks add longer pauses (~0.5-1.0s)
+- Speaking style affects pacing - allocate time proportionally
+- The total time MUST fit within ${audioDuration.toFixed(1)} seconds
+
+Text: "${text}"
+
+Return ONLY a JSON array of objects with "word", "start", "end" fields. No markdown. Example: [{"word":"Hello","start":0,"end":0.4},{"word":"world","start":0.45,"end":0.9}]`,
+      config: {
+        responseMimeType: "application/json",
+      }
+    });
+    const result = JSON.parse(response.text || "[]");
+    if (Array.isArray(result) && result.length > 0) {
+      return result as WordTiming[];
+    }
+    return [];
+  } catch (error) {
+    console.error("Failed to get word timings", error);
     return [];
   }
 }

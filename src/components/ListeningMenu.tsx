@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, type MouseEvent } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Repeat, Repeat1, Trash2, Volume2, VolumeX, Loader2, ListMusic, X } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Repeat, Repeat1, Trash2, Volume2, VolumeX, Loader2, ListMusic, X, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   loadHistory,
@@ -19,8 +19,10 @@ export function ListeningMenu() {
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const [showScript, setShowScript] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement>(null);
+  const scriptRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchPlaylist = async () => {
@@ -142,6 +144,31 @@ export function ListeningMenu() {
     setLoopMode(prev => prev === 'none' ? 'all' : prev === 'all' ? 'one' : 'none');
   };
 
+  // Word highlighting for script display
+  const currentWords = currentItem ? currentItem.text.split(/\s+/).filter(w => w.length > 0) : [];
+  const totalChars = currentWords.reduce((acc, w) => acc + w.length, 0);
+  const charsPerSecond = duration > 0 ? totalChars / duration : 0;
+  const currentCharPos = charsPerSecond * currentTime;
+  let currentWordIndex = -1;
+  let charCount = 0;
+  for (let i = 0; i < currentWords.length; i++) {
+    charCount += currentWords[i].length;
+    if (currentCharPos <= charCount) {
+      currentWordIndex = i;
+      break;
+    }
+  }
+  if (currentWordIndex === -1 && currentWords.length > 0) {
+    currentWordIndex = currentWords.length - 1;
+  }
+
+  const currentWordRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (currentWordRef.current && isPlaying && showScript) {
+      currentWordRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [currentWordIndex, isPlaying, showScript]);
+
   const formatTime = (t: number) =>
     `${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, '0')}`;
 
@@ -253,10 +280,46 @@ export function ListeningMenu() {
                         <p className="text-sm font-medium truncate">{currentItem.title || 'Untitled Lesson'}</p>
                         <p className="text-xs text-slate-400 truncate">{currentItem.voice} · {currentItem.text.slice(0, 60)}...</p>
                       </div>
-                      <button onClick={() => setMinimized(true)} className="p-1 text-slate-400 hover:text-white shrink-0">
-                        <X size={18} />
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => setShowScript(!showScript)}
+                          className={`p-1.5 rounded transition-colors ${showScript ? 'text-indigo-400 bg-indigo-400/10' : 'text-slate-400 hover:text-white'}`}
+                          title={showScript ? 'Hide script' : 'Show script'}
+                        >
+                          <FileText size={16} />
+                        </button>
+                        <button onClick={() => setMinimized(true)} className="p-1 text-slate-400 hover:text-white">
+                          <X size={18} />
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Collapsible Script Panel */}
+                    {showScript && (
+                      <div
+                        ref={scriptRef}
+                        className="mb-3 max-h-32 overflow-y-auto bg-slate-800 rounded-lg p-3 text-sm leading-relaxed"
+                      >
+                        <div className="flex flex-wrap gap-x-1.5 gap-y-1">
+                          {currentWords.map((word, index) => {
+                            const isCurrent = index === currentWordIndex && isPlaying;
+                            const isPast = index < currentWordIndex;
+                            return (
+                              <span
+                                key={index}
+                                ref={isCurrent ? currentWordRef : null}
+                                className={`transition-colors duration-150 px-0.5 rounded ${
+                                  isCurrent ? 'text-indigo-300 bg-indigo-500/20 font-medium' :
+                                  isPast ? 'text-slate-300' : 'text-slate-500'
+                                }`}
+                              >
+                                {word}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Progress bar */}
                     <div className="flex items-center gap-3 mb-3">

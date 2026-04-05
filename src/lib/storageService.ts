@@ -129,6 +129,27 @@ export async function deleteGeneration(id: string, storagePath: string | null): 
 }
 
 /**
+ * Update the title of an existing generation.
+ */
+export async function updateGenerationTitle(id: string, title: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('audio_generations')
+      .update({ title })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Failed to update title:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('updateGenerationTitle error:', err);
+    return false;
+  }
+}
+
+/**
  * Get public URL for an audio file in Storage.
  */
 export function getAudioPublicUrl(storagePath: string): string {
