@@ -1,0 +1,5 @@
+{
+  "name": "BECI ENGLISH",
+  "description": "English learning application with Audio & Shadowing features.",
+  "requestFramePermissions": ["camera", "microphone"]
+}
