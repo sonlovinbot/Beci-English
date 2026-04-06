@@ -1,13 +1,18 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   Loader2, Play, Pause, ChevronDown, ChevronUp, ClipboardCheck,
-  Sparkles, RotateCcw, CheckCircle2, XCircle, ArrowLeft, Volume2
+  Sparkles, RotateCcw, CheckCircle2, XCircle, ArrowLeft, ArrowRight,
+  Volume2, Trophy, History, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   loadHistory,
   getAudioPublicUrl,
+  saveTest,
+  updateTestScore,
+  loadTestsForAudio,
   type AudioGeneration,
+  type SavedTest,
 } from '../lib/storageService';
 import {
   generateListeningTest,
@@ -17,7 +22,15 @@ import {
 } from '../lib/gemini';
 
 type Difficulty = 'easy' | 'medium' | 'hard';
-type TestSection = 'multipleChoice' | 'trueFalse' | 'fillBlanks';
+type TestStep = 'multipleChoice' | 'trueFalse' | 'fillBlanks' | 'results';
+
+const STEP_ORDER: TestStep[] = ['multipleChoice', 'trueFalse', 'fillBlanks', 'results'];
+const STEP_LABELS: Record<string, string> = {
+  multipleChoice: 'Multiple Choice',
+  trueFalse: 'True / False',
+  fillBlanks: 'Fill in Blanks',
+  results: 'Results',
+};
 
 export function ListeningTest() {
   // Selection state
@@ -26,10 +39,19 @@ export function ListeningTest() {
   const [selectedAudio, setSelectedAudio] = useState<AudioGeneration | null>(null);
   const [difficulty, setDifficulty] = useState<Difficulty>('easy');
 
+  // Saved tests
+  const [savedTests, setSavedTests] = useState<SavedTest[]>([]);
+  const [isLoadingSaved, setIsLoadingSaved] = useState(false);
+
   // Test state
   const [test, setTest] = useState<ListeningTestType | null>(null);
+  const [testDbId, setTestDbId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Step-by-step state
+  const [currentStep, setCurrentStep] = useState<TestStep>('multipleChoice');
+  const [submittedSections, setSubmittedSections] = useState<Set<TestStep>>(new Set());
 
   // Answer state
   const [mcAnswers, setMcAnswers] = useState<Record<number, number>>({});
@@ -37,8 +59,6 @@ export function ListeningTest() {
   const [fillAnswers, setFillAnswers] = useState<Record<number, string>>({});
 
   // UI state
-  const [activeSection, setActiveSection] = useState<TestSection>('multipleChoice');
-  const [submitted, setSubmitted] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
 
   // Audio player
@@ -57,29 +77,62 @@ export function ListeningTest() {
     fetch();
   }, []);
 
+  // Load saved tests when audio is selected
+  useEffect(() => {
+    if (!selectedAudio) return;
+    setIsLoadingSaved(true);
+    loadTestsForAudio(selectedAudio.id).then(tests => {
+      setSavedTests(tests);
+      setIsLoadingSaved(false);
+    });
+  }, [selectedAudio?.id]);
+
   const audioUrl = selectedAudio?.audio_storage_path
     ? getAudioPublicUrl(selectedAudio.audio_storage_path)
     : null;
+
+  const resetTestState = () => {
+    setCurrentStep('multipleChoice');
+    setSubmittedSections(new Set());
+    setMcAnswers({});
+    setTfAnswers({});
+    setFillAnswers({});
+    setTestDbId(null);
+  };
 
   const handleGenerateTest = async () => {
     if (!selectedAudio) return;
     setIsGenerating(true);
     setError(null);
     setTest(null);
-    setSubmitted(false);
-    setMcAnswers({});
-    setTfAnswers({});
-    setFillAnswers({});
-    setActiveSection('multipleChoice');
+    resetTestState();
 
     try {
       const result = await generateListeningTest(selectedAudio.text, difficulty);
       setTest(result);
+
+      // Save test to DB
+      const saved = await saveTest(selectedAudio.id, difficulty, result);
+      if (saved) {
+        setTestDbId(saved.id);
+        setSavedTests(prev => [saved, ...prev]);
+      }
     } catch (err) {
       setError('Failed to generate test. Please try again.');
       console.error(err);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleLoadSavedTest = (savedTest: SavedTest) => {
+    setTest(savedTest.test_data as ListeningTestType);
+    setTestDbId(savedTest.id);
+    resetTestState();
+    if (savedTest.completed) {
+      // Show results directly for completed tests
+      setSubmittedSections(new Set(['multipleChoice', 'trueFalse', 'fillBlanks']));
+      setCurrentStep('results');
     }
   };
 
@@ -93,59 +146,89 @@ export function ListeningTest() {
     setIsPlaying(!isPlaying);
   };
 
-  // Scoring
-  const getScore = () => {
-    if (!test) return { mc: 0, mcTotal: 0, tf: 0, tfTotal: 0, fill: 0, fillTotal: 0, total: 0, max: 0 };
-
-    let mc = 0;
+  // Scoring helpers
+  const getMcScore = () => {
+    if (!test) return { correct: 0, total: 0 };
+    let correct = 0;
     test.multipleChoice.forEach((q, i) => {
-      if (mcAnswers[i] === q.correctIndex) mc++;
+      if (mcAnswers[i] === q.correctIndex) correct++;
     });
-
-    let tf = 0;
-    test.trueFalse.forEach((q, i) => {
-      if (tfAnswers[i] === q.correct) tf++;
-    });
-
-    let fill = 0;
-    const fillTotal = test.fillBlanks.blanks.length;
-    test.fillBlanks.blanks.forEach((answer, i) => {
-      const userAnswer = (fillAnswers[i] || '').trim().toLowerCase();
-      const correct = answer.trim().toLowerCase();
-      if (userAnswer === correct) fill++;
-    });
-
-    const mcTotal = test.multipleChoice.length;
-    const tfTotal = test.trueFalse.length;
-    const total = mc + tf + fill;
-    const max = mcTotal + tfTotal + fillTotal;
-
-    return { mc, mcTotal, tf, tfTotal, fill, fillTotal, total, max };
+    return { correct, total: test.multipleChoice.length };
   };
 
-  const handleSubmit = () => {
-    setSubmitted(true);
+  const getTfScore = () => {
+    if (!test) return { correct: 0, total: 0 };
+    let correct = 0;
+    test.trueFalse.forEach((q, i) => {
+      if (tfAnswers[i] === q.correct) correct++;
+    });
+    return { correct, total: test.trueFalse.length };
+  };
+
+  const getFillScore = () => {
+    if (!test) return { correct: 0, total: 0 };
+    let correct = 0;
+    test.fillBlanks.blanks.forEach((answer, i) => {
+      if ((fillAnswers[i] || '').trim().toLowerCase() === answer.trim().toLowerCase()) correct++;
+    });
+    return { correct, total: test.fillBlanks.blanks.length };
+  };
+
+  const getTotalScore = () => {
+    const mc = getMcScore();
+    const tf = getTfScore();
+    const fill = getFillScore();
+    return {
+      mc: mc.correct, mcTotal: mc.total,
+      tf: tf.correct, tfTotal: tf.total,
+      fill: fill.correct, fillTotal: fill.total,
+      total: mc.correct + tf.correct + fill.correct,
+      max: mc.total + tf.total + fill.total,
+    };
+  };
+
+  const handleSubmitSection = async () => {
+    const newSubmitted = new Set(submittedSections);
+    newSubmitted.add(currentStep);
+    setSubmittedSections(newSubmitted);
+
+    // Move to next step
+    const currentIdx = STEP_ORDER.indexOf(currentStep);
+    const nextStep = STEP_ORDER[currentIdx + 1];
+
+    if (nextStep === 'results') {
+      // All sections done — save score to DB
+      const s = getTotalScore();
+      if (testDbId) {
+        await updateTestScore(testDbId, s.mc, s.tf, s.fill, s.total, s.max);
+        // Update local saved tests
+        setSavedTests(prev => prev.map(t =>
+          t.id === testDbId
+            ? { ...t, score_mc: s.mc, score_tf: s.tf, score_fill: s.fill, score_total: s.total, score_max: s.max, completed: true }
+            : t
+        ));
+      }
+      setCurrentStep('results');
+    } else {
+      setCurrentStep(nextStep);
+    }
   };
 
   const handleRetry = () => {
-    setSubmitted(false);
-    setMcAnswers({});
-    setTfAnswers({});
-    setFillAnswers({});
-    setActiveSection('multipleChoice');
+    resetTestState();
   };
 
   const handleBackToSelect = () => {
     setSelectedAudio(null);
     setTest(null);
-    setSubmitted(false);
-    setMcAnswers({});
-    setTfAnswers({});
-    setFillAnswers({});
+    resetTestState();
+    setSavedTests([]);
   };
 
   const formatTime = (t: number) =>
     `${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, '0')}`;
+
+  const isSectionSubmitted = (step: TestStep) => submittedSections.has(step);
 
   // --- Audio Selection Screen ---
   if (!selectedAudio) {
@@ -227,10 +310,7 @@ export function ListeningTest() {
     <div className="max-w-5xl mx-auto p-4 md:p-8">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={handleBackToSelect}
-          className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-        >
+        <button onClick={handleBackToSelect} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
           <ArrowLeft size={20} className="text-slate-600" />
         </button>
         <div className="flex-1 min-w-0">
@@ -273,7 +353,6 @@ export function ListeningTest() {
             </div>
           </div>
         </div>
-        {/* Transcript toggle */}
         <button
           onClick={() => setShowTranscript(!showTranscript)}
           className="mt-3 flex items-center gap-1 text-xs text-indigo-200 hover:text-white transition-colors"
@@ -282,12 +361,7 @@ export function ListeningTest() {
         </button>
         <AnimatePresence>
           {showTranscript && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
-            >
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
               <div className="mt-2 bg-white/10 rounded-lg p-3 text-sm text-indigo-100 max-h-40 overflow-y-auto leading-relaxed whitespace-pre-wrap">
                 {selectedAudio.text}
               </div>
@@ -296,17 +370,64 @@ export function ListeningTest() {
         </AnimatePresence>
       </div>
 
-      {/* Generate Button */}
+      {/* Saved Tests + Generate */}
       {!test && !isGenerating && (
-        <div className="text-center py-12">
-          <button
-            onClick={handleGenerateTest}
-            className="inline-flex items-center gap-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-4 px-8 rounded-2xl shadow-lg transition-all text-lg"
-          >
-            <Sparkles size={22} />
-            Generate Test with AI
-          </button>
-          <p className="text-slate-400 text-sm mt-3">AI will create multiple choice, true/false, and fill-in-the-blank questions</p>
+        <div className="space-y-6">
+          <div className="text-center py-8">
+            <button
+              onClick={handleGenerateTest}
+              className="inline-flex items-center gap-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-4 px-8 rounded-2xl shadow-lg transition-all text-lg"
+            >
+              <Sparkles size={22} />
+              Generate New Test
+            </button>
+            <p className="text-slate-400 text-sm mt-3">AI will create multiple choice, true/false, and fill-in-the-blank questions</p>
+          </div>
+
+          {/* Previous Tests */}
+          {isLoadingSaved ? (
+            <div className="flex items-center justify-center gap-2 text-slate-400 py-4">
+              <Loader2 size={16} className="animate-spin" /> Loading saved tests...
+            </div>
+          ) : savedTests.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="p-4 border-b border-slate-100 bg-slate-50">
+                <h3 className="font-semibold text-slate-700 flex items-center gap-2">
+                  <History size={16} className="text-indigo-500" />
+                  Previous Tests
+                </h3>
+              </div>
+              <div className="divide-y divide-slate-100 max-h-60 overflow-y-auto">
+                {savedTests.map(st => {
+                  const pct = st.score_max ? Math.round(((st.score_total || 0) / st.score_max) * 100) : null;
+                  const color = pct !== null ? (pct >= 80 ? 'text-green-600' : pct >= 60 ? 'text-yellow-600' : 'text-red-600') : 'text-slate-400';
+                  return (
+                    <button
+                      key={st.id}
+                      onClick={() => handleLoadSavedTest(st)}
+                      className="w-full flex items-center gap-4 px-4 py-3 hover:bg-indigo-50 transition-colors text-left"
+                    >
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${st.completed ? 'bg-green-100' : 'bg-slate-100'}`}>
+                        {st.completed ? <Trophy size={18} className="text-green-600" /> : <Clock size={18} className="text-slate-400" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 capitalize">{st.difficulty} test</p>
+                        <p className="text-xs text-slate-400">{new Date(st.created_at).toLocaleString()}</p>
+                      </div>
+                      {st.completed && pct !== null ? (
+                        <div className="text-right shrink-0">
+                          <p className={`text-lg font-bold ${color}`}>{pct}%</p>
+                          <p className="text-xs text-slate-400">{st.score_total}/{st.score_max}</p>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-indigo-500 font-medium bg-indigo-50 px-2 py-1 rounded-md">Resume</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -320,87 +441,110 @@ export function ListeningTest() {
       {/* Test Content */}
       {test && (
         <div className="space-y-6">
-          {/* Section Tabs */}
-          <div className="flex gap-2 bg-white rounded-xl p-1.5 shadow-sm border border-slate-200">
-            {([
-              { key: 'multipleChoice' as TestSection, label: 'Multiple Choice', count: test.multipleChoice.length },
-              { key: 'trueFalse' as TestSection, label: 'True / False', count: test.trueFalse.length },
-              { key: 'fillBlanks' as TestSection, label: 'Fill in Blanks', count: test.fillBlanks.blanks.length },
-            ]).map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveSection(tab.key)}
-                className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${
-                  activeSection === tab.key
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {tab.label}
-                <span className={`ml-1.5 text-xs ${activeSection === tab.key ? 'text-indigo-200' : 'text-slate-400'}`}>
-                  ({tab.count})
-                </span>
-              </button>
-            ))}
+          {/* Step Progress */}
+          <div className="flex items-center gap-1 bg-white rounded-xl p-2 shadow-sm border border-slate-200">
+            {STEP_ORDER.map((step, idx) => {
+              const isActive = currentStep === step;
+              const isDone = submittedSections.has(step) || (step === 'results' && currentStep === 'results');
+              const isLocked = !isDone && !isActive;
+              return (
+                <div key={step} className="flex-1 flex items-center">
+                  <button
+                    onClick={() => { if (isDone || isActive) setCurrentStep(step); }}
+                    disabled={isLocked}
+                    className={`w-full py-2.5 px-2 rounded-lg text-xs sm:text-sm font-medium transition-all text-center ${
+                      isActive ? 'bg-indigo-600 text-white shadow-sm' :
+                      isDone ? 'bg-green-100 text-green-700 cursor-pointer' :
+                      'text-slate-300 cursor-not-allowed'
+                    }`}
+                  >
+                    {isDone && step !== 'results' && <CheckCircle2 size={14} className="inline mr-1" />}
+                    {step === 'results' && currentStep === 'results' && <Trophy size={14} className="inline mr-1" />}
+                    {STEP_LABELS[step]}
+                  </button>
+                  {idx < STEP_ORDER.length - 1 && (
+                    <ArrowRight size={14} className="text-slate-300 mx-0.5 shrink-0" />
+                  )}
+                </div>
+              );
+            })}
           </div>
 
-          {/* Score Banner */}
-          {submitted && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6"
-            >
-              {(() => {
-                const s = getScore();
-                const pct = Math.round((s.total / s.max) * 100);
-                const color = pct >= 80 ? 'text-green-600' : pct >= 60 ? 'text-yellow-600' : 'text-red-600';
-                return (
-                  <div className="text-center">
-                    <p className={`text-4xl font-bold ${color}`}>{pct}%</p>
-                    <p className="text-slate-500 mt-1">{s.total} / {s.max} correct</p>
-                    <div className="flex justify-center gap-6 mt-3 text-sm text-slate-500">
-                      <span>MC: {s.mc}/{s.mcTotal}</span>
-                      <span>T/F: {s.tf}/{s.tfTotal}</span>
-                      <span>Fill: {s.fill}/{s.fillTotal}</span>
+          {/* RESULTS */}
+          {currentStep === 'results' && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
+                {(() => {
+                  const s = getTotalScore();
+                  const pct = s.max > 0 ? Math.round((s.total / s.max) * 100) : 0;
+                  const color = pct >= 80 ? 'text-green-600' : pct >= 60 ? 'text-yellow-600' : 'text-red-600';
+                  const bg = pct >= 80 ? 'from-green-50 to-emerald-50' : pct >= 60 ? 'from-yellow-50 to-amber-50' : 'from-red-50 to-orange-50';
+                  return (
+                    <div className={`bg-gradient-to-br ${bg} rounded-xl p-8`}>
+                      <Trophy size={48} className={`mx-auto mb-3 ${color}`} />
+                      <p className={`text-5xl font-bold ${color}`}>{pct}%</p>
+                      <p className="text-slate-600 mt-2 text-lg">{s.total} / {s.max} correct</p>
+                      <div className="flex justify-center gap-8 mt-6">
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-slate-800">{s.mc}/{s.mcTotal}</p>
+                          <p className="text-xs text-slate-500 mt-1">Multiple Choice</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-slate-800">{s.tf}/{s.tfTotal}</p>
+                          <p className="text-xs text-slate-500 mt-1">True / False</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-2xl font-bold text-slate-800">{s.fill}/{s.fillTotal}</p>
+                          <p className="text-xs text-slate-500 mt-1">Fill Blanks</p>
+                        </div>
+                      </div>
+                      <div className="flex justify-center gap-3 mt-6">
+                        <button onClick={handleRetry} className="flex items-center gap-2 px-5 py-2.5 bg-white text-indigo-700 rounded-xl font-medium text-sm hover:bg-indigo-50 transition-colors border border-indigo-200">
+                          <RotateCcw size={16} /> Try Again
+                        </button>
+                        <button onClick={handleGenerateTest} className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium text-sm hover:bg-indigo-700 transition-colors">
+                          <Sparkles size={16} /> New Test
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex justify-center gap-3 mt-4">
-                      <button onClick={handleRetry} className="flex items-center gap-2 px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg font-medium text-sm hover:bg-indigo-200 transition-colors">
-                        <RotateCcw size={16} /> Try Again
-                      </button>
-                      <button onClick={handleGenerateTest} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium text-sm hover:bg-indigo-700 transition-colors">
-                        <Sparkles size={16} /> New Test
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
+                  );
+                })()}
+              </div>
+
+              {/* Review sections - clickable from step bar above */}
+              <p className="text-sm text-slate-400 text-center">Click on a completed section above to review your answers.</p>
             </motion.div>
           )}
 
-          {/* Multiple Choice Section */}
-          {activeSection === 'multipleChoice' && (
+          {/* MULTIPLE CHOICE */}
+          {currentStep === 'multipleChoice' && (
             <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-slate-800 text-lg">Multiple Choice</h3>
+                <span className="text-sm text-slate-400">
+                  {Object.keys(mcAnswers).length} / {test.multipleChoice.length} answered
+                </span>
+              </div>
               {test.multipleChoice.map((q: MultipleChoiceQuestion, qi: number) => {
                 const userAnswer = mcAnswers[qi];
-                const isCorrect = submitted && userAnswer === q.correctIndex;
-                const isWrong = submitted && userAnswer !== undefined && userAnswer !== q.correctIndex;
+                const sectionDone = isSectionSubmitted('multipleChoice');
+                const isCorrect = sectionDone && userAnswer === q.correctIndex;
+                const isWrong = sectionDone && userAnswer !== undefined && userAnswer !== q.correctIndex;
                 return (
                   <div key={qi} className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                     <p className="font-medium text-slate-800 mb-3">
-                      <span className="text-indigo-500 mr-2">{qi + 1}.</span>
-                      {q.question}
+                      <span className="text-indigo-500 mr-2">{qi + 1}.</span>{q.question}
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {q.options.map((opt, oi) => {
                         const isSelected = userAnswer === oi;
-                        const showCorrect = submitted && oi === q.correctIndex;
-                        const showWrong = submitted && isSelected && oi !== q.correctIndex;
+                        const showCorrect = sectionDone && oi === q.correctIndex;
+                        const showWrong = sectionDone && isSelected && oi !== q.correctIndex;
                         return (
                           <button
                             key={oi}
-                            onClick={() => !submitted && setMcAnswers(prev => ({ ...prev, [qi]: oi }))}
-                            disabled={submitted}
+                            onClick={() => !sectionDone && setMcAnswers(prev => ({ ...prev, [qi]: oi }))}
+                            disabled={sectionDone}
                             className={`flex items-center gap-3 p-3 rounded-lg border-2 text-left text-sm transition-all ${
                               showCorrect ? 'border-green-400 bg-green-50 text-green-800' :
                               showWrong ? 'border-red-400 bg-red-50 text-red-800' :
@@ -421,33 +565,62 @@ export function ListeningTest() {
                         );
                       })}
                     </div>
-                    {submitted && isWrong && (
-                      <p className="text-xs text-green-600 mt-2">Correct answer: {q.options[q.correctIndex]}</p>
-                    )}
+                    {isWrong && <p className="text-xs text-green-600 mt-2">Correct: {q.options[q.correctIndex]}</p>}
                   </div>
                 );
               })}
+
+              {/* Section Submit */}
+              {!isSectionSubmitted('multipleChoice') && (
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={handleSubmitSection}
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
+                  >
+                    Submit & Next <ArrowRight size={18} />
+                  </button>
+                </div>
+              )}
+              {isSectionSubmitted('multipleChoice') && (
+                <div className="flex justify-between items-center pt-2">
+                  <p className="text-sm font-medium text-green-600">
+                    Score: {getMcScore().correct} / {getMcScore().total}
+                  </p>
+                  <button
+                    onClick={() => setCurrentStep('trueFalse')}
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
+                  >
+                    Next: True / False <ArrowRight size={18} />
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {/* True/False Section */}
-          {activeSection === 'trueFalse' && (
+          {/* TRUE / FALSE */}
+          {currentStep === 'trueFalse' && (
             <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-slate-800 text-lg">True / False</h3>
+                <span className="text-sm text-slate-400">
+                  {Object.keys(tfAnswers).length} / {test.trueFalse.length} answered
+                </span>
+              </div>
               {test.trueFalse.map((q: TrueFalseQuestion, qi: number) => {
                 const userAnswer = tfAnswers[qi];
                 const answered = userAnswer !== undefined;
-                const isCorrect = submitted && answered && userAnswer === q.correct;
-                const isWrong = submitted && answered && userAnswer !== q.correct;
+                const sectionDone = isSectionSubmitted('trueFalse');
+                const isCorrect = sectionDone && answered && userAnswer === q.correct;
+                const isWrong = sectionDone && answered && userAnswer !== q.correct;
                 return (
                   <div key={qi} className={`bg-white rounded-xl shadow-sm border p-5 ${
                     isCorrect ? 'border-green-300' : isWrong ? 'border-red-300' : 'border-slate-200'
                   }`}>
                     <div className="flex items-start justify-between gap-4">
                       <p className="font-medium text-slate-800 flex-1">
-                        <span className="text-indigo-500 mr-2">{qi + 1}.</span>
-                        {q.statement}
+                        <span className="text-indigo-500 mr-2">{qi + 1}.</span>{q.statement}
                       </p>
-                      {submitted && (
+                      {sectionDone && (
                         isCorrect ? <CheckCircle2 size={20} className="text-green-500 shrink-0 mt-0.5" /> :
                         isWrong ? <XCircle size={20} className="text-red-500 shrink-0 mt-0.5" /> : null
                       )}
@@ -455,13 +628,13 @@ export function ListeningTest() {
                     <div className="flex gap-3 mt-3">
                       {[true, false].map(val => {
                         const isSelected = userAnswer === val;
-                        const showCorrect = submitted && val === q.correct;
-                        const showWrong = submitted && isSelected && val !== q.correct;
+                        const showCorrect = sectionDone && val === q.correct;
+                        const showWrong = sectionDone && isSelected && val !== q.correct;
                         return (
                           <button
                             key={String(val)}
-                            onClick={() => !submitted && setTfAnswers(prev => ({ ...prev, [qi]: val }))}
-                            disabled={submitted}
+                            onClick={() => !sectionDone && setTfAnswers(prev => ({ ...prev, [qi]: val }))}
+                            disabled={sectionDone}
                             className={`flex-1 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
                               showCorrect ? 'border-green-400 bg-green-50 text-green-700' :
                               showWrong ? 'border-red-400 bg-red-50 text-red-700' :
@@ -477,72 +650,104 @@ export function ListeningTest() {
                   </div>
                 );
               })}
+
+              {!isSectionSubmitted('trueFalse') && (
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={handleSubmitSection}
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
+                  >
+                    Submit & Next <ArrowRight size={18} />
+                  </button>
+                </div>
+              )}
+              {isSectionSubmitted('trueFalse') && (
+                <div className="flex justify-between items-center pt-2">
+                  <p className="text-sm font-medium text-green-600">
+                    Score: {getTfScore().correct} / {getTfScore().total}
+                  </p>
+                  <button
+                    onClick={() => setCurrentStep('fillBlanks')}
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
+                  >
+                    Next: Fill Blanks <ArrowRight size={18} />
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Fill in Blanks Section */}
-          {activeSection === 'fillBlanks' && (
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 md:p-6">
-              <p className="text-sm text-slate-500 mb-4">Fill in the missing words from the transcript.</p>
-              <div className="text-base leading-[2.5] text-slate-700">
-                {(() => {
-                  const parts = test.fillBlanks.textWithBlanks.split(/(___BLANK_\d+___)/g);
-                  return parts.map((part, i) => {
-                    const blankMatch = part.match(/___BLANK_(\d+)___/);
-                    if (!blankMatch) return <span key={i}>{part}</span>;
-
-                    const blankIndex = parseInt(blankMatch[1]) - 1;
-                    const userVal = fillAnswers[blankIndex] || '';
-                    const correctVal = test.fillBlanks.blanks[blankIndex];
-                    const isCorrect = submitted && userVal.trim().toLowerCase() === correctVal?.trim().toLowerCase();
-                    const isWrong = submitted && userVal.trim().toLowerCase() !== correctVal?.trim().toLowerCase();
-
-                    return (
-                      <span key={i} className="inline-flex items-center mx-1 align-baseline">
-                        <span className="text-xs text-indigo-400 mr-1 font-mono">{blankIndex + 1}</span>
-                        <input
-                          type="text"
-                          value={userVal}
-                          onChange={(e) => !submitted && setFillAnswers(prev => ({ ...prev, [blankIndex]: e.target.value }))}
-                          disabled={submitted}
-                          placeholder="..."
-                          className={`w-28 sm:w-36 border-b-2 bg-transparent text-center text-sm py-0.5 focus:outline-none transition-colors ${
-                            isCorrect ? 'border-green-500 text-green-700' :
-                            isWrong ? 'border-red-500 text-red-700' :
-                            'border-indigo-300 focus:border-indigo-500 text-slate-800'
-                          }`}
-                        />
-                        {isWrong && (
-                          <span className="text-xs text-green-600 ml-1">({correctVal})</span>
-                        )}
-                      </span>
-                    );
-                  });
-                })()}
+          {/* FILL IN BLANKS */}
+          {currentStep === 'fillBlanks' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-slate-800 text-lg">Fill in the Blanks</h3>
+                <span className="text-sm text-slate-400">
+                  {Object.values(fillAnswers).filter(v => v.trim()).length} / {test.fillBlanks.blanks.length} filled
+                </span>
               </div>
-            </div>
-          )}
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 md:p-6">
+                <p className="text-sm text-slate-500 mb-4">Fill in the missing words from the transcript.</p>
+                <div className="text-base leading-[2.5] text-slate-700">
+                  {(() => {
+                    const sectionDone = isSectionSubmitted('fillBlanks');
+                    const parts = test.fillBlanks.textWithBlanks.split(/(___BLANK_\d+___)/g);
+                    return parts.map((part, i) => {
+                      const blankMatch = part.match(/___BLANK_(\d+)___/);
+                      if (!blankMatch) return <span key={i}>{part}</span>;
 
-          {/* Submit / Navigation */}
-          {!submitted && (
-            <div className="flex justify-between items-center">
-              <div className="text-sm text-slate-400">
-                {(() => {
-                  const mcCount = Object.keys(mcAnswers).length;
-                  const tfCount = Object.keys(tfAnswers).length;
-                  const fillCount = Object.values(fillAnswers).filter(v => v.trim()).length;
-                  const total = mcCount + tfCount + fillCount;
-                  const max = test.multipleChoice.length + test.trueFalse.length + test.fillBlanks.blanks.length;
-                  return `${total} / ${max} answered`;
-                })()}
+                      const blankIndex = parseInt(blankMatch[1]) - 1;
+                      const userVal = fillAnswers[blankIndex] || '';
+                      const correctVal = test.fillBlanks.blanks[blankIndex];
+                      const isCorrect = sectionDone && userVal.trim().toLowerCase() === correctVal?.trim().toLowerCase();
+                      const isWrong = sectionDone && userVal.trim().toLowerCase() !== correctVal?.trim().toLowerCase();
+
+                      return (
+                        <span key={i} className="inline-flex items-center mx-1 align-baseline">
+                          <span className="text-xs text-indigo-400 mr-1 font-mono">{blankIndex + 1}</span>
+                          <input
+                            type="text"
+                            value={userVal}
+                            onChange={(e) => !sectionDone && setFillAnswers(prev => ({ ...prev, [blankIndex]: e.target.value }))}
+                            disabled={sectionDone}
+                            placeholder="..."
+                            className={`w-28 sm:w-36 border-b-2 bg-transparent text-center text-sm py-0.5 focus:outline-none transition-colors ${
+                              isCorrect ? 'border-green-500 text-green-700' :
+                              isWrong ? 'border-red-500 text-red-700' :
+                              'border-indigo-300 focus:border-indigo-500 text-slate-800'
+                            }`}
+                          />
+                          {isWrong && <span className="text-xs text-green-600 ml-1">({correctVal})</span>}
+                        </span>
+                      );
+                    });
+                  })()}
+                </div>
               </div>
-              <button
-                onClick={handleSubmit}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
-              >
-                <ClipboardCheck size={18} />
-                Submit Answers
-              </button>
+
+              {!isSectionSubmitted('fillBlanks') && (
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={handleSubmitSection}
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
+                  >
+                    <ClipboardCheck size={18} /> Submit & See Results
+                  </button>
+                </div>
+              )}
+              {isSectionSubmitted('fillBlanks') && (
+                <div className="flex justify-between items-center pt-2">
+                  <p className="text-sm font-medium text-green-600">
+                    Score: {getFillScore().correct} / {getFillScore().total}
+                  </p>
+                  <button
+                    onClick={() => setCurrentStep('results')}
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
+                  >
+                    <Trophy size={18} /> View Final Results
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

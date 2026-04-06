@@ -171,3 +171,104 @@ export function getAudioPublicUrl(storagePath: string): string {
   const { data } = supabase.storage.from('audio').getPublicUrl(storagePath);
   return data.publicUrl;
 }
+
+// --- Listening Tests ---
+
+export interface SavedTest {
+  id: string;
+  audio_generation_id: string;
+  user_id: string;
+  difficulty: string;
+  test_data: unknown;
+  score_mc: number | null;
+  score_tf: number | null;
+  score_fill: number | null;
+  score_total: number | null;
+  score_max: number | null;
+  completed: boolean;
+  created_at: string;
+}
+
+export async function saveTest(
+  audioGenerationId: string,
+  difficulty: string,
+  testData: unknown
+): Promise<SavedTest | null> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const { data, error } = await supabase
+      .from('listening_tests')
+      .insert({
+        audio_generation_id: audioGenerationId,
+        user_id: user.id,
+        difficulty,
+        test_data: testData,
+        completed: false,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Failed to save test:', error);
+      return null;
+    }
+    return data as SavedTest;
+  } catch (err) {
+    console.error('saveTest error:', err);
+    return null;
+  }
+}
+
+export async function updateTestScore(
+  testId: string,
+  scoreMc: number,
+  scoreTf: number,
+  scoreFill: number,
+  scoreTotal: number,
+  scoreMax: number
+): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('listening_tests')
+      .update({
+        score_mc: scoreMc,
+        score_tf: scoreTf,
+        score_fill: scoreFill,
+        score_total: scoreTotal,
+        score_max: scoreMax,
+        completed: true,
+      })
+      .eq('id', testId);
+
+    if (error) {
+      console.error('Failed to update test score:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('updateTestScore error:', err);
+    return false;
+  }
+}
+
+export async function loadTestsForAudio(audioGenerationId: string): Promise<SavedTest[]> {
+  try {
+    const { data, error } = await supabase
+      .from('listening_tests')
+      .select('*')
+      .eq('audio_generation_id', audioGenerationId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.error('Failed to load tests:', error);
+      return [];
+    }
+    return (data || []) as SavedTest[];
+  } catch (err) {
+    console.error('loadTestsForAudio error:', err);
+    return [];
+  }
+}
