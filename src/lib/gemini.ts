@@ -119,6 +119,80 @@ export async function suggestTitle(text: string): Promise<string> {
   }
 }
 
+// --- Listening Test Generation ---
+
+export interface MultipleChoiceQuestion {
+  question: string;
+  options: string[];
+  correctIndex: number;
+}
+
+export interface TrueFalseQuestion {
+  statement: string;
+  correct: boolean;
+}
+
+export interface FillBlankQuestion {
+  textWithBlanks: string;
+  blanks: string[];
+}
+
+export interface ListeningTest {
+  multipleChoice: MultipleChoiceQuestion[];
+  trueFalse: TrueFalseQuestion[];
+  fillBlanks: FillBlankQuestion;
+}
+
+export async function generateListeningTest(
+  transcript: string,
+  difficulty: 'easy' | 'medium' | 'hard'
+): Promise<ListeningTest> {
+  const difficultyGuide = {
+    easy: 'A2 level. Use simple vocabulary and straightforward questions. 5 multiple choice, 5 true/false. Fill-in blanks should remove common A2 words.',
+    medium: 'B1 level. Use moderate vocabulary with some inference required. 7 multiple choice, 6 true/false. Fill-in blanks should remove B1 vocabulary and key phrases.',
+    hard: 'B2 level. Require deeper comprehension, inference, and attention to detail. 10 multiple choice, 8 true/false. Fill-in blanks should remove advanced vocabulary and idiomatic expressions.',
+  };
+
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `You are an English listening test creator. Based on this transcript, create a comprehensive listening test.
+
+Difficulty: ${difficultyGuide[difficulty]}
+
+Transcript:
+"${transcript}"
+
+Create a JSON object with exactly this structure:
+{
+  "multipleChoice": [
+    { "question": "What is...?", "options": ["A", "B", "C", "D"], "correctIndex": 0 }
+  ],
+  "trueFalse": [
+    { "statement": "The speaker said...", "correct": true }
+  ],
+  "fillBlanks": {
+    "textWithBlanks": "The transcript with ___BLANK_1___ replacing about 40% of key words...",
+    "blanks": ["word1", "word2", "..."]
+  }
+}
+
+Rules:
+- Multiple choice: each question has exactly 4 options. correctIndex is 0-3.
+- True/False: mix of true and false statements. About 50/50 split.
+- Fill blanks: Take the ORIGINAL transcript and replace approximately 40% of content words with numbered blanks (___BLANK_1___, ___BLANK_2___, etc). Focus on ${difficulty === 'easy' ? 'A2' : difficulty === 'medium' ? 'B1' : 'B2'} vocabulary. Keep function words (the, a, is, are, etc) visible. The blanks array must contain the correct answers in order.
+- Questions should progress from easier to harder.
+- All questions must be answerable from the transcript alone.
+
+Return ONLY valid JSON, no markdown.`,
+    config: {
+      responseMimeType: "application/json",
+    }
+  });
+
+  const result = JSON.parse(response.text || "{}");
+  return result as ListeningTest;
+}
+
 export async function generateAudio(text: string, voice: string, style: string): Promise<string> {
   const prompt = style ? `Say ${style}: ${text}` : text;
   

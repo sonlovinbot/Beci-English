@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Sidebar, type Page } from './components/Sidebar';
 import { AudioShadowing } from './components/AudioShadowing';
 import { ListeningMenu } from './components/ListeningMenu';
+import { ListeningTest } from './components/ListeningTest';
 import { AuthPage } from './components/AuthPage';
 import { AuthProvider, useAuth } from './lib/auth';
 import { Menu, X, Loader2 } from 'lucide-react';
@@ -32,6 +33,8 @@ function AppContent() {
         return <AudioShadowing />;
       case 'listening':
         return <ListeningMenu />;
+      case 'listeningTest':
+        return <ListeningTest />;
       default:
         return (
           <div className="max-w-5xl mx-auto p-4 md:p-8">

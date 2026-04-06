@@ -1,8 +1,8 @@
 import { type ReactNode } from 'react';
-import { BookOpen, Headphones, Settings, User, LogOut, ListMusic } from 'lucide-react';
+import { BookOpen, Headphones, Settings, User, LogOut, ListMusic, ClipboardCheck } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 
-export type Page = 'audio' | 'listening' | 'reading' | 'progress' | 'settings';
+export type Page = 'audio' | 'listening' | 'listeningTest' | 'reading' | 'progress' | 'settings';
 
 interface SidebarProps {
   onClose?: () => void;
@@ -44,6 +44,7 @@ export function Sidebar({ onClose, currentPage, onNavigate }: SidebarProps) {
       <nav className="flex-1 px-4 py-6 md:py-0 space-y-2 overflow-y-auto">
         {navItem('audio', 'Audio & Shadowing', <Headphones size={20} />)}
         {navItem('listening', 'Listening', <ListMusic size={20} />)}
+        {navItem('listeningTest', 'Listening Test', <ClipboardCheck size={20} />)}
         {navItem('reading', 'Reading Practice', <BookOpen size={20} />)}
         {navItem('progress', 'My Progress', <User size={20} />)}
       </nav>
