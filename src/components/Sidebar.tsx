@@ -38,7 +38,7 @@ export function Sidebar({ onClose, currentPage, onNavigate }: SidebarProps) {
   return (
     <aside className="w-64 bg-slate-900 text-slate-300 h-full flex flex-col shadow-xl md:shadow-none">
       <div className="p-6 hidden md:block">
-        <h1 className="text-2xl font-bold text-white tracking-tight">BECI ENGLISH</h1>
+        <h1 className="text-2xl font-bold text-white tracking-tight">English City Campus</h1>
       </div>
 
       <nav className="flex-1 px-4 py-6 md:py-0 space-y-2 overflow-y-auto">

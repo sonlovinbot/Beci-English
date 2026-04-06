@@ -3,6 +3,7 @@ import { Sidebar, type Page } from './components/Sidebar';
 import { AudioShadowing } from './components/AudioShadowing';
 import { ListeningMenu } from './components/ListeningMenu';
 import { ListeningTest } from './components/ListeningTest';
+import { SettingsPage } from './components/SettingsPage';
 import { AuthPage } from './components/AuthPage';
 import { AuthProvider, useAuth } from './lib/auth';
 import { Menu, X, Loader2 } from 'lucide-react';
@@ -35,6 +36,8 @@ function AppContent() {
         return <ListeningMenu />;
       case 'listeningTest':
         return <ListeningTest />;
+      case 'settings':
+        return <SettingsPage />;
       default:
         return (
           <div className="max-w-5xl mx-auto p-4 md:p-8">
@@ -48,7 +51,7 @@ function AppContent() {
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans flex-col md:flex-row">
       {/* Mobile Header */}
       <div className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center z-20 shadow-md">
-        <h1 className="text-xl font-bold tracking-tight">BECI ENGLISH</h1>
+        <h1 className="text-xl font-bold tracking-tight">English City Campus</h1>
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           className="p-1 hover:bg-slate-800 rounded-md transition-colors"

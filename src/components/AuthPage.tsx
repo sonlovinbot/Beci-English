@@ -1,6 +1,6 @@
 import { useState, FormEvent } from 'react';
 import { motion } from 'motion/react';
-import { Eye, EyeOff, Mail, Lock, Loader2, Headphones, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, Loader2, Globe, ArrowRight } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 
 export function AuthPage() {
@@ -92,9 +92,9 @@ export function AuthPage() {
             transition={{ delay: 0.1, duration: 0.4 }}
             className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-lg shadow-indigo-500/25 mb-4"
           >
-            <Headphones size={32} className="text-white" />
+            <Globe size={32} className="text-white" />
           </motion.div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">BECI ENGLISH</h1>
+          <h1 className="text-3xl font-bold text-white tracking-tight">English City Campus</h1>
           <p className="text-slate-400 mt-2">Master English through Audio Shadowing</p>
         </div>
 

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Loader2, Play, Pause, ChevronDown, ChevronUp, ClipboardCheck,
   Sparkles, RotateCcw, CheckCircle2, XCircle, ArrowLeft, ArrowRight,
-  Volume2, Trophy, History, Clock
+  Volume2, Trophy, History, Clock, Eye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -52,6 +52,7 @@ export function ListeningTest() {
   // Step-by-step state
   const [currentStep, setCurrentStep] = useState<TestStep>('multipleChoice');
   const [submittedSections, setSubmittedSections] = useState<Set<TestStep>>(new Set());
+  const [checkingSections, setCheckingSections] = useState<Set<TestStep>>(new Set());
 
   // Answer state
   const [mcAnswers, setMcAnswers] = useState<Record<number, number>>({});
@@ -94,6 +95,7 @@ export function ListeningTest() {
   const resetTestState = () => {
     setCurrentStep('multipleChoice');
     setSubmittedSections(new Set());
+    setCheckingSections(new Set());
     setMcAnswers({});
     setTfAnswers({});
     setFillAnswers({});
@@ -229,6 +231,19 @@ export function ListeningTest() {
     `${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, '0')}`;
 
   const isSectionSubmitted = (step: TestStep) => submittedSections.has(step);
+  const isSectionChecking = (step: TestStep) => checkingSections.has(step);
+
+  const handleCheckAnswer = (step: TestStep) => {
+    setCheckingSections(prev => {
+      const next = new Set(prev);
+      if (next.has(step)) {
+        next.delete(step); // toggle off
+      } else {
+        next.add(step);
+      }
+      return next;
+    });
+  };
 
   // --- Audio Selection Screen ---
   if (!selectedAudio) {
@@ -528,10 +543,15 @@ export function ListeningTest() {
               {test.multipleChoice.map((q: MultipleChoiceQuestion, qi: number) => {
                 const userAnswer = mcAnswers[qi];
                 const sectionDone = isSectionSubmitted('multipleChoice');
+                const checking = isSectionChecking('multipleChoice') && !sectionDone;
+                const checkCorrect = checking && userAnswer === q.correctIndex;
+                const checkWrong = checking && userAnswer !== undefined && userAnswer !== q.correctIndex;
                 const isCorrect = sectionDone && userAnswer === q.correctIndex;
                 const isWrong = sectionDone && userAnswer !== undefined && userAnswer !== q.correctIndex;
                 return (
-                  <div key={qi} className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                  <div key={qi} className={`bg-white rounded-xl shadow-sm border p-5 ${
+                    checkCorrect ? 'border-blue-200' : checkWrong ? 'border-red-200' : 'border-slate-200'
+                  }`}>
                     <p className="font-medium text-slate-800 mb-3">
                       <span className="text-indigo-500 mr-2">{qi + 1}.</span>{q.question}
                     </p>
@@ -540,6 +560,9 @@ export function ListeningTest() {
                         const isSelected = userAnswer === oi;
                         const showCorrect = sectionDone && oi === q.correctIndex;
                         const showWrong = sectionDone && isSelected && oi !== q.correctIndex;
+                        // Check mode: only highlight the user's selected answer
+                        const checkBlue = checking && isSelected && userAnswer === q.correctIndex;
+                        const checkRed = checking && isSelected && userAnswer !== q.correctIndex;
                         return (
                           <button
                             key={oi}
@@ -548,6 +571,8 @@ export function ListeningTest() {
                             className={`flex items-center gap-3 p-3 rounded-lg border-2 text-left text-sm transition-all ${
                               showCorrect ? 'border-green-400 bg-green-50 text-green-800' :
                               showWrong ? 'border-red-400 bg-red-50 text-red-800' :
+                              checkBlue ? 'border-blue-400 bg-blue-50 text-blue-800' :
+                              checkRed ? 'border-red-300 bg-red-50/50 text-red-700' :
                               isSelected ? 'border-indigo-400 bg-indigo-50 text-indigo-800' :
                               'border-slate-200 hover:border-slate-300 text-slate-700'
                             }`}
@@ -555,6 +580,8 @@ export function ListeningTest() {
                             <span className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold shrink-0 ${
                               showCorrect ? 'border-green-500 bg-green-500 text-white' :
                               showWrong ? 'border-red-500 bg-red-500 text-white' :
+                              checkBlue ? 'border-blue-500 bg-blue-500 text-white' :
+                              checkRed ? 'border-red-400 bg-red-400 text-white' :
                               isSelected ? 'border-indigo-500 bg-indigo-500 text-white' :
                               'border-slate-300 text-slate-400'
                             }`}>
@@ -572,7 +599,17 @@ export function ListeningTest() {
 
               {/* Section Submit */}
               {!isSectionSubmitted('multipleChoice') && (
-                <div className="flex justify-end pt-2">
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    onClick={() => handleCheckAnswer('multipleChoice')}
+                    className={`flex items-center gap-2 font-medium py-3 px-5 rounded-xl shadow-sm transition-all text-sm ${
+                      isSectionChecking('multipleChoice')
+                        ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+                    }`}
+                  >
+                    <Eye size={16} /> {isSectionChecking('multipleChoice') ? 'Hide Check' : 'Check Answer'}
+                  </button>
                   <button
                     onClick={handleSubmitSection}
                     className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
@@ -610,11 +647,15 @@ export function ListeningTest() {
                 const userAnswer = tfAnswers[qi];
                 const answered = userAnswer !== undefined;
                 const sectionDone = isSectionSubmitted('trueFalse');
+                const checking = isSectionChecking('trueFalse') && !sectionDone;
+                const checkCorrect = checking && answered && userAnswer === q.correct;
+                const checkWrong = checking && answered && userAnswer !== q.correct;
                 const isCorrect = sectionDone && answered && userAnswer === q.correct;
                 const isWrong = sectionDone && answered && userAnswer !== q.correct;
                 return (
                   <div key={qi} className={`bg-white rounded-xl shadow-sm border p-5 ${
-                    isCorrect ? 'border-green-300' : isWrong ? 'border-red-300' : 'border-slate-200'
+                    isCorrect ? 'border-green-300' : isWrong ? 'border-red-300' :
+                    checkCorrect ? 'border-blue-200' : checkWrong ? 'border-red-200' : 'border-slate-200'
                   }`}>
                     <div className="flex items-start justify-between gap-4">
                       <p className="font-medium text-slate-800 flex-1">
@@ -630,6 +671,8 @@ export function ListeningTest() {
                         const isSelected = userAnswer === val;
                         const showCorrect = sectionDone && val === q.correct;
                         const showWrong = sectionDone && isSelected && val !== q.correct;
+                        const checkBlue = checking && isSelected && userAnswer === q.correct;
+                        const checkRed = checking && isSelected && userAnswer !== q.correct;
                         return (
                           <button
                             key={String(val)}
@@ -638,6 +681,8 @@ export function ListeningTest() {
                             className={`flex-1 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
                               showCorrect ? 'border-green-400 bg-green-50 text-green-700' :
                               showWrong ? 'border-red-400 bg-red-50 text-red-700' :
+                              checkBlue ? 'border-blue-400 bg-blue-50 text-blue-700' :
+                              checkRed ? 'border-red-300 bg-red-50/50 text-red-600' :
                               isSelected ? 'border-indigo-400 bg-indigo-50 text-indigo-700' :
                               'border-slate-200 text-slate-600 hover:border-slate-300'
                             }`}
@@ -652,7 +697,17 @@ export function ListeningTest() {
               })}
 
               {!isSectionSubmitted('trueFalse') && (
-                <div className="flex justify-end pt-2">
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    onClick={() => handleCheckAnswer('trueFalse')}
+                    className={`flex items-center gap-2 font-medium py-3 px-5 rounded-xl shadow-sm transition-all text-sm ${
+                      isSectionChecking('trueFalse')
+                        ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+                    }`}
+                  >
+                    <Eye size={16} /> {isSectionChecking('trueFalse') ? 'Hide Check' : 'Check Answer'}
+                  </button>
                   <button
                     onClick={handleSubmitSection}
                     className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
@@ -691,6 +746,7 @@ export function ListeningTest() {
                 <div className="text-base leading-[2.5] text-slate-700">
                   {(() => {
                     const sectionDone = isSectionSubmitted('fillBlanks');
+                    const checking = isSectionChecking('fillBlanks') && !sectionDone;
                     const parts = test.fillBlanks.textWithBlanks.split(/(___BLANK_\d+___)/g);
                     return parts.map((part, i) => {
                       const blankMatch = part.match(/___BLANK_(\d+)___/);
@@ -701,6 +757,8 @@ export function ListeningTest() {
                       const correctVal = test.fillBlanks.blanks[blankIndex];
                       const isCorrect = sectionDone && userVal.trim().toLowerCase() === correctVal?.trim().toLowerCase();
                       const isWrong = sectionDone && userVal.trim().toLowerCase() !== correctVal?.trim().toLowerCase();
+                      const checkCorrect = checking && userVal.trim() && userVal.trim().toLowerCase() === correctVal?.trim().toLowerCase();
+                      const checkWrong = checking && userVal.trim() && userVal.trim().toLowerCase() !== correctVal?.trim().toLowerCase();
 
                       return (
                         <span key={i} className="inline-flex items-center mx-1 align-baseline">
@@ -714,6 +772,8 @@ export function ListeningTest() {
                             className={`w-28 sm:w-36 border-b-2 bg-transparent text-center text-sm py-0.5 focus:outline-none transition-colors ${
                               isCorrect ? 'border-green-500 text-green-700' :
                               isWrong ? 'border-red-500 text-red-700' :
+                              checkCorrect ? 'border-blue-500 text-blue-700' :
+                              checkWrong ? 'border-red-400 text-red-600' :
                               'border-indigo-300 focus:border-indigo-500 text-slate-800'
                             }`}
                           />
@@ -726,7 +786,17 @@ export function ListeningTest() {
               </div>
 
               {!isSectionSubmitted('fillBlanks') && (
-                <div className="flex justify-end pt-2">
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    onClick={() => handleCheckAnswer('fillBlanks')}
+                    className={`flex items-center gap-2 font-medium py-3 px-5 rounded-xl shadow-sm transition-all text-sm ${
+                      isSectionChecking('fillBlanks')
+                        ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+                    }`}
+                  >
+                    <Eye size={16} /> {isSectionChecking('fillBlanks') ? 'Hide Check' : 'Check Answer'}
+                  </button>
                   <button
                     onClick={handleSubmitSection}
                     className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
