@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Loader2, Play, Pause, ChevronDown, ChevronUp, ClipboardCheck,
   Sparkles, RotateCcw, CheckCircle2, XCircle, ArrowLeft, ArrowRight,
-  Volume2, Trophy, History, Clock, Eye
+  Volume2, Trophy, History, Clock, Eye, Undo2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -194,16 +194,14 @@ export function ListeningTest() {
     newSubmitted.add(currentStep);
     setSubmittedSections(newSubmitted);
 
-    // Move to next step
-    const currentIdx = STEP_ORDER.indexOf(currentStep);
-    const nextStep = STEP_ORDER[currentIdx + 1];
+    // Check if all 3 test sections are now submitted
+    const allDone = newSubmitted.has('multipleChoice') && newSubmitted.has('trueFalse') && newSubmitted.has('fillBlanks');
 
-    if (nextStep === 'results') {
-      // All sections done — save score to DB
+    if (allDone) {
+      // Save score to DB and go to results
       const s = getTotalScore();
       if (testDbId) {
         await updateTestScore(testDbId, s.mc, s.tf, s.fill, s.total, s.max);
-        // Update local saved tests
         setSavedTests(prev => prev.map(t =>
           t.id === testDbId
             ? { ...t, score_mc: s.mc, score_tf: s.tf, score_fill: s.fill, score_total: s.total, score_max: s.max, completed: true }
@@ -211,9 +209,8 @@ export function ListeningTest() {
         ));
       }
       setCurrentStep('results');
-    } else {
-      setCurrentStep(nextStep);
     }
+    // Stay on current section so user can review, then navigate freely
   };
 
   const handleRetry = () => {
@@ -243,6 +240,16 @@ export function ListeningTest() {
       }
       return next;
     });
+  };
+
+  const rewindAudio = (seconds: number) => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - seconds);
+      if (!isPlaying) {
+        audioRef.current.play();
+        setIsPlaying(true);
+      }
+    }
   };
 
   // --- Audio Selection Screen ---
@@ -456,25 +463,28 @@ export function ListeningTest() {
       {/* Test Content */}
       {test && (
         <div className="space-y-6">
-          {/* Step Progress */}
+          {/* Section Tabs - freely navigable */}
           <div className="flex items-center gap-1 bg-white rounded-xl p-2 shadow-sm border border-slate-200">
             {STEP_ORDER.map((step, idx) => {
               const isActive = currentStep === step;
-              const isDone = submittedSections.has(step) || (step === 'results' && currentStep === 'results');
-              const isLocked = !isDone && !isActive;
+              const isDone = submittedSections.has(step);
+              const allDone = submittedSections.has('multipleChoice') && submittedSections.has('trueFalse') && submittedSections.has('fillBlanks');
+              const isResults = step === 'results';
+              const canClick = isResults ? allDone : true;
               return (
                 <div key={step} className="flex-1 flex items-center">
                   <button
-                    onClick={() => { if (isDone || isActive) setCurrentStep(step); }}
-                    disabled={isLocked}
+                    onClick={() => canClick && setCurrentStep(step)}
+                    disabled={!canClick}
                     className={`w-full py-2.5 px-2 rounded-lg text-xs sm:text-sm font-medium transition-all text-center ${
                       isActive ? 'bg-indigo-600 text-white shadow-sm' :
                       isDone ? 'bg-green-100 text-green-700 cursor-pointer' :
-                      'text-slate-300 cursor-not-allowed'
+                      !canClick ? 'text-slate-300 cursor-not-allowed' :
+                      'text-slate-600 hover:bg-slate-50 cursor-pointer'
                     }`}
                   >
-                    {isDone && step !== 'results' && <CheckCircle2 size={14} className="inline mr-1" />}
-                    {step === 'results' && currentStep === 'results' && <Trophy size={14} className="inline mr-1" />}
+                    {isDone && !isResults && <CheckCircle2 size={14} className="inline mr-1" />}
+                    {isResults && allDone && <Trophy size={14} className="inline mr-1" />}
                     {STEP_LABELS[step]}
                   </button>
                   {idx < STEP_ORDER.length - 1 && (
@@ -614,21 +624,15 @@ export function ListeningTest() {
                     onClick={handleSubmitSection}
                     className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
                   >
-                    Submit & Next <ArrowRight size={18} />
+                    <ClipboardCheck size={18} /> Submit
                   </button>
                 </div>
               )}
               {isSectionSubmitted('multipleChoice') && (
                 <div className="flex justify-between items-center pt-2">
-                  <p className="text-sm font-medium text-green-600">
-                    Score: {getMcScore().correct} / {getMcScore().total}
+                  <p className="text-sm font-medium text-green-600 flex items-center gap-1">
+                    <CheckCircle2 size={16} /> Score: {getMcScore().correct} / {getMcScore().total}
                   </p>
-                  <button
-                    onClick={() => setCurrentStep('trueFalse')}
-                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
-                  >
-                    Next: True / False <ArrowRight size={18} />
-                  </button>
                 </div>
               )}
             </div>
@@ -712,21 +716,15 @@ export function ListeningTest() {
                     onClick={handleSubmitSection}
                     className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
                   >
-                    Submit & Next <ArrowRight size={18} />
+                    <ClipboardCheck size={18} /> Submit
                   </button>
                 </div>
               )}
               {isSectionSubmitted('trueFalse') && (
                 <div className="flex justify-between items-center pt-2">
-                  <p className="text-sm font-medium text-green-600">
-                    Score: {getTfScore().correct} / {getTfScore().total}
+                  <p className="text-sm font-medium text-green-600 flex items-center gap-1">
+                    <CheckCircle2 size={16} /> Score: {getTfScore().correct} / {getTfScore().total}
                   </p>
-                  <button
-                    onClick={() => setCurrentStep('fillBlanks')}
-                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
-                  >
-                    Next: Fill Blanks <ArrowRight size={18} />
-                  </button>
                 </div>
               )}
             </div>
@@ -738,9 +736,43 @@ export function ListeningTest() {
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-slate-800 text-lg">Fill in the Blanks</h3>
                 <span className="text-sm text-slate-400">
-                  {Object.values(fillAnswers).filter(v => v.trim()).length} / {test.fillBlanks.blanks.length} filled
+                  {Object.values(fillAnswers).filter((v: string) => v.trim()).length} / {test.fillBlanks.blanks.length} filled
                 </span>
               </div>
+              {/* Mini Audio Player with Rewind */}
+              <div className="bg-slate-800 rounded-xl p-3 flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
+                <button onClick={togglePlay} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors shrink-0">
+                  {isPlaying ? <Pause size={16} className="text-white" /> : <Play size={16} className="text-white ml-0.5" />}
+                </button>
+                <div className="flex-1 min-w-0 hidden sm:flex items-center gap-2">
+                  <span className="text-xs text-slate-400 w-8 text-right shrink-0">{formatTime(currentTime)}</span>
+                  <div
+                    className="flex-1 h-1 bg-slate-700 rounded-full overflow-hidden cursor-pointer"
+                    onClick={(e) => {
+                      if (audioRef.current && duration) {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        audioRef.current.currentTime = ((e.clientX - rect.left) / rect.width) * duration;
+                      }
+                    }}
+                  >
+                    <div className="h-full bg-indigo-500 transition-all duration-100" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }} />
+                  </div>
+                  <span className="text-xs text-slate-400 w-8 shrink-0">{formatTime(duration)}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {[5, 10, 15].map(sec => (
+                    <button
+                      key={sec}
+                      onClick={() => rewindAudio(sec)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-white text-xs font-medium transition-colors"
+                      title={`Rewind ${sec}s`}
+                    >
+                      <Undo2 size={12} /> {sec}s
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 md:p-6">
                 <p className="text-sm text-slate-500 mb-4">Fill in the missing words from the transcript.</p>
                 <div className="text-base leading-[2.5] text-slate-700">
@@ -807,15 +839,9 @@ export function ListeningTest() {
               )}
               {isSectionSubmitted('fillBlanks') && (
                 <div className="flex justify-between items-center pt-2">
-                  <p className="text-sm font-medium text-green-600">
-                    Score: {getFillScore().correct} / {getFillScore().total}
+                  <p className="text-sm font-medium text-green-600 flex items-center gap-1">
+                    <CheckCircle2 size={16} /> Score: {getFillScore().correct} / {getFillScore().total}
                   </p>
-                  <button
-                    onClick={() => setCurrentStep('results')}
-                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl shadow-sm transition-all"
-                  >
-                    <Trophy size={18} /> View Final Results
-                  </button>
                 </div>
               )}
             </div>
