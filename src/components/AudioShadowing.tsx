@@ -20,7 +20,13 @@ const STYLES = [
   { label: 'Slowly & Clearly', value: 'slowly and clearly, enunciating every word' },
   { label: 'Cheerful', value: 'cheerfully and energetically' },
   { label: 'Professional', value: 'in a professional and calm tone' },
-  { label: 'Storyteller', value: 'like a storyteller, with dramatic pauses' }
+  { label: 'Storyteller', value: 'like a storyteller, with dramatic pauses' },
+  { label: 'Angry', value: 'in an angry, frustrated tone' },
+  { label: 'Sad', value: 'in a sad, melancholic voice' },
+  { label: 'Heartbroken', value: 'in a heartbroken, emotionally devastated voice' },
+  { label: 'Whispering', value: 'in a soft whisper' },
+  { label: 'Excited', value: 'with great excitement and enthusiasm' },
+  { label: 'Custom', value: '__custom__' },
 ];
 
 export function AudioShadowing() {
@@ -28,6 +34,7 @@ export function AudioShadowing() {
   const [title, setTitle] = useState('');
   const [voice, setVoice] = useState('Kore');
   const [style, setStyle] = useState('');
+  const [customStyle, setCustomStyle] = useState('');
   const [isExtracting, setIsExtracting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -198,9 +205,12 @@ export function AudioShadowing() {
     setAudioUrl(null);
 
     try {
+      // Resolve effective style (custom input or preset)
+      const effectiveStyle = style === '__custom__' ? customStyle.trim() : style;
+
       // Generate audio and suggest title in parallel
       const [base64Audio, suggested] = await Promise.all([
-        generateAudio(text, voice, style),
+        generateAudio(text, voice, effectiveStyle),
         title.trim() ? Promise.resolve(title) : suggestTitle(text),
       ]);
 
@@ -213,7 +223,7 @@ export function AudioShadowing() {
       setAudioUrl(url);
 
       // Save to Supabase and show error if it fails
-      const saved = await handleSaveGeneration(suggestedTitle, text, voice, style, base64Audio);
+      const saved = await handleSaveGeneration(suggestedTitle, text, voice, effectiveStyle, base64Audio);
       if (!saved) {
         setError('Audio generated but failed to save. Check console for details.');
       }
@@ -330,7 +340,7 @@ export function AudioShadowing() {
                   <Volume2 size={16} className="text-slate-400" />
                   Reading Style
                 </label>
-                <select 
+                <select
                   value={style}
                   onChange={(e) => setStyle(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm md:text-base"
@@ -339,6 +349,15 @@ export function AudioShadowing() {
                     <option key={s.label} value={s.value}>{s.label}</option>
                   ))}
                 </select>
+                {style === '__custom__' && (
+                  <input
+                    type="text"
+                    value={customStyle}
+                    onChange={(e) => setCustomStyle(e.target.value)}
+                    placeholder="e.g. like a robot, in a sarcastic tone..."
+                    className="w-full mt-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm"
+                  />
+                )}
               </div>
 
               <div className="mt-2">
