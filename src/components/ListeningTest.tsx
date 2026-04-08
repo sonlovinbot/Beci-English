@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Loader2, Play, Pause, ChevronDown, ChevronUp, ClipboardCheck,
   Sparkles, RotateCcw, CheckCircle2, XCircle, ArrowLeft, ArrowRight,
-  Volume2, Trophy, History, Clock, Eye, Undo2
+  Volume2, Trophy, History, Clock, Eye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -20,6 +20,7 @@ import {
   type MultipleChoiceQuestion,
   type TrueFalseQuestion,
 } from '../lib/gemini';
+import { AudioControls } from './AudioControls';
 
 type Difficulty = 'easy' | 'medium' | 'hard';
 type TestStep = 'multipleChoice' | 'trueFalse' | 'fillBlanks' | 'results';
@@ -66,6 +67,7 @@ export function ListeningTest() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -242,16 +244,6 @@ export function ListeningTest() {
     });
   };
 
-  const rewindAudio = (seconds: number) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - seconds);
-      if (!isPlaying) {
-        audioRef.current.play();
-        setIsPlaying(true);
-      }
-    }
-  };
-
   // --- Audio Selection Screen ---
   if (!selectedAudio) {
     return (
@@ -375,9 +367,20 @@ export function ListeningTest() {
             </div>
           </div>
         </div>
+        <div className="mt-3 flex items-center justify-between flex-wrap gap-2">
+          <AudioControls
+            audioRef={audioRef}
+            playbackRate={playbackRate}
+            onPlaybackRateChange={setPlaybackRate}
+            isPlaying={isPlaying}
+            onPlayStateChange={setIsPlaying}
+            variant="dark"
+            compact
+          />
+        </div>
         <button
           onClick={() => setShowTranscript(!showTranscript)}
-          className="mt-3 flex items-center gap-1 text-xs text-indigo-200 hover:text-white transition-colors"
+          className="mt-2 flex items-center gap-1 text-xs text-indigo-200 hover:text-white transition-colors"
         >
           Transcript {showTranscript ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
@@ -739,40 +742,6 @@ export function ListeningTest() {
                   {Object.values(fillAnswers).filter((v: string) => v.trim()).length} / {test.fillBlanks.blanks.length} filled
                 </span>
               </div>
-              {/* Mini Audio Player with Rewind */}
-              <div className="bg-slate-800 rounded-xl p-3 flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
-                <button onClick={togglePlay} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors shrink-0">
-                  {isPlaying ? <Pause size={16} className="text-white" /> : <Play size={16} className="text-white ml-0.5" />}
-                </button>
-                <div className="flex-1 min-w-0 hidden sm:flex items-center gap-2">
-                  <span className="text-xs text-slate-400 w-8 text-right shrink-0">{formatTime(currentTime)}</span>
-                  <div
-                    className="flex-1 h-1 bg-slate-700 rounded-full overflow-hidden cursor-pointer"
-                    onClick={(e) => {
-                      if (audioRef.current && duration) {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        audioRef.current.currentTime = ((e.clientX - rect.left) / rect.width) * duration;
-                      }
-                    }}
-                  >
-                    <div className="h-full bg-indigo-500 transition-all duration-100" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }} />
-                  </div>
-                  <span className="text-xs text-slate-400 w-8 shrink-0">{formatTime(duration)}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {[5, 10, 15].map(sec => (
-                    <button
-                      key={sec}
-                      onClick={() => rewindAudio(sec)}
-                      className="flex items-center gap-1 px-2.5 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-white text-xs font-medium transition-colors"
-                      title={`Rewind ${sec}s`}
-                    >
-                      <Undo2 size={12} /> {sec}s
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 md:p-6">
                 <p className="text-sm text-slate-500 mb-4">Fill in the missing words from the transcript.</p>
                 <div className="text-base leading-[2.5] text-slate-700">

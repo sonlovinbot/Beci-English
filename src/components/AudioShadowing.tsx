@@ -1,9 +1,10 @@
 import { useState, useRef, ChangeEvent, useEffect, MouseEvent, ClipboardEvent } from 'react';
-import { Play, Loader2, Image as ImageIcon, Volume2, Settings2, BookOpen, User, Headphones, History, Trash2, Volume1, Mic, Pencil, Check } from 'lucide-react';
+import { Play, Pause, Loader2, Image as ImageIcon, Volume2, Settings2, BookOpen, User, Headphones, History, Trash2, Volume1, Mic, Pencil, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { extractTextFromImage, generateAudio, suggestTitle } from '../lib/gemini';
 import { pcmBase64ToWavBlob } from '../lib/audioUtils';
 import { ShadowingPlayer } from './ShadowingPlayer';
+import { AudioControls } from './AudioControls';
 import {
   saveGeneration,
   loadHistory,
@@ -40,9 +41,14 @@ export function AudioShadowing() {
   const [shadowingData, setShadowingData] = useState<{text: string, audioUrl: string} | null>(null);
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingTitleValue, setEditingTitleValue] = useState('');
+  const [playerPlaying, setPlayerPlaying] = useState(false);
+  const [playerRate, setPlayerRate] = useState(1);
+  const [playerTime, setPlayerTime] = useState(0);
+  const [playerDuration, setPlayerDuration] = useState(0);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const playerRef = useRef<HTMLAudioElement>(null);
 
   // Load history from Supabase on mount
   useEffect(() => {
@@ -387,15 +393,52 @@ export function AudioShadowing() {
                   <Mic size={16} /> Shadowing Mode
                 </button>
               </div>
-              <audio 
-                controls 
-                src={audioUrl} 
-                className="w-full h-10 md:h-12 rounded-lg outline-none"
-                autoPlay
+              {/* Custom audio player */}
+              <div className="flex items-center gap-3 mb-3">
+                <button
+                  onClick={() => {
+                    if (playerRef.current) {
+                      if (playerPlaying) { playerRef.current.pause(); } else { playerRef.current.play(); }
+                      setPlayerPlaying(!playerPlaying);
+                    }
+                  }}
+                  className="p-2.5 bg-white/20 rounded-full hover:bg-white/30 transition-colors shrink-0"
+                >
+                  {playerPlaying ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
+                </button>
+                <span className="text-xs text-indigo-200 w-9 text-right">{Math.floor(playerTime / 60)}:{Math.floor(playerTime % 60).toString().padStart(2, '0')}</span>
+                <div
+                  className="flex-1 h-1.5 bg-white/20 rounded-full overflow-hidden cursor-pointer"
+                  onClick={(e) => {
+                    if (playerRef.current && playerDuration) {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      playerRef.current.currentTime = ((e.clientX - rect.left) / rect.width) * playerDuration;
+                    }
+                  }}
+                >
+                  <div className="h-full bg-white transition-all duration-100" style={{ width: `${playerDuration ? (playerTime / playerDuration) * 100 : 0}%` }} />
+                </div>
+                <span className="text-xs text-indigo-200 w-9">{Math.floor(playerDuration / 60)}:{Math.floor(playerDuration % 60).toString().padStart(2, '0')}</span>
+              </div>
+              <AudioControls
+                audioRef={playerRef}
+                playbackRate={playerRate}
+                onPlaybackRateChange={setPlayerRate}
+                isPlaying={playerPlaying}
+                onPlayStateChange={setPlayerPlaying}
+                variant="dark"
               />
-              <p className="text-indigo-100 text-xs md:text-sm mt-4 text-center">
-                Listen carefully and repeat after the speaker.
-              </p>
+              <audio
+                ref={playerRef}
+                src={audioUrl}
+                autoPlay
+                onPlay={() => setPlayerPlaying(true)}
+                onPause={() => setPlayerPlaying(false)}
+                onTimeUpdate={() => playerRef.current && setPlayerTime(playerRef.current.currentTime)}
+                onLoadedMetadata={() => playerRef.current && setPlayerDuration(playerRef.current.duration)}
+                onEnded={() => setPlayerPlaying(false)}
+                className="hidden"
+              />
             </motion.div>
           )}
         </div>

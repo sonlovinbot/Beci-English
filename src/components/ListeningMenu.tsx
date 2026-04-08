@@ -7,6 +7,7 @@ import {
   getAudioPublicUrl,
   type AudioGeneration,
 } from '../lib/storageService';
+import { AudioControls } from './AudioControls';
 
 export function ListeningMenu() {
   const [playlist, setPlaylist] = useState<AudioGeneration[]>([]);
@@ -19,6 +20,7 @@ export function ListeningMenu() {
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const [showScript, setShowScript] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -334,6 +336,19 @@ export function ListeningMenu() {
                         />
                       </div>
                       <span className="text-xs text-slate-400 w-10">{formatTime(duration)}</span>
+                    </div>
+
+                    {/* Speed + Rewind */}
+                    <div className="flex items-center justify-between mb-3">
+                      <AudioControls
+                        audioRef={audioRef}
+                        playbackRate={playbackRate}
+                        onPlaybackRateChange={setPlaybackRate}
+                        isPlaying={isPlaying}
+                        onPlayStateChange={setIsPlaying}
+                        variant="dark"
+                        compact
+                      />
                     </div>
 
                     {/* Controls */}

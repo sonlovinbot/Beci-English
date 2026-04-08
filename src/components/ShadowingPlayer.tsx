@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Play, Pause, RotateCcw, Repeat, Mic, Square, X } from 'lucide-react';
 import { getPhonetics, getWordTimings, type WordTiming } from '../lib/gemini';
+import { AudioControls } from './AudioControls';
 
 interface ShadowingPlayerProps {
   text: string;
@@ -265,24 +266,27 @@ export function ShadowingPlayer({ text, audioUrl, onClose }: ShadowingPlayerProp
             </span>
           </div>
 
-          {/* Buttons */}
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => setPlaybackRate(r => r === 1 ? 0.75 : r === 0.75 ? 0.5 : 1)}
-                className="text-slate-400 hover:text-white font-medium w-12 transition-colors"
-              >
-                {playbackRate}x
-              </button>
-              <button
-                onClick={() => setIsLooping(!isLooping)}
-                className={`p-2 rounded-full transition-colors ${isLooping ? 'text-indigo-400 bg-indigo-400/10' : 'text-slate-400 hover:text-white'}`}
-                title="Loop"
-              >
-                <Repeat size={20} />
-              </button>
-            </div>
+          {/* Speed + Rewind */}
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <AudioControls
+              audioRef={audioRef}
+              playbackRate={playbackRate}
+              onPlaybackRateChange={setPlaybackRate}
+              isPlaying={isPlaying}
+              onPlayStateChange={setIsPlaying}
+              variant="dark"
+            />
+            <button
+              onClick={() => setIsLooping(!isLooping)}
+              className={`p-2 rounded-full transition-colors ${isLooping ? 'text-indigo-400 bg-indigo-400/10' : 'text-slate-400 hover:text-white'}`}
+              title="Loop"
+            >
+              <Repeat size={20} />
+            </button>
+          </div>
 
+          {/* Buttons */}
+          <div className="flex flex-wrap items-center justify-center gap-4">
             <div className="flex items-center gap-6">
               <button
                 onClick={restart}
