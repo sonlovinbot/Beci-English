@@ -3,6 +3,7 @@ import { Sidebar, type Page } from './components/Sidebar';
 import { AudioShadowing } from './components/AudioShadowing';
 import { ListeningMenu } from './components/ListeningMenu';
 import { ListeningTest } from './components/ListeningTest';
+import { VocabularyPage } from './components/VocabularyPage';
 import { SettingsPage } from './components/SettingsPage';
 import { AuthPage } from './components/AuthPage';
 import { AuthProvider, useAuth } from './lib/auth';
@@ -38,6 +39,8 @@ function AppContent() {
         return <ListeningMenu />;
       case 'listeningTest':
         return <ListeningTest />;
+      case 'vocabulary':
+        return <VocabularyPage />;
       case 'settings':
         return <SettingsPage />;
       default:
