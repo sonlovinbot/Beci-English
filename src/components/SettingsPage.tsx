@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { User, Lock, LogOut, Loader2, CheckCircle2, Globe, Trash2, Eye, EyeOff } from 'lucide-react';
+import { User, Lock, LogOut, Loader2, CheckCircle2, Globe, Eye, EyeOff, Palette, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../lib/auth';
 import { supabase } from '../lib/supabase';
+import { useTheme, THEMES, THEME_SWATCHES, type ThemeColor } from '../lib/theme';
 
 export function SettingsPage() {
   const { user, signOut } = useAuth();
+  const { themeColor, setThemeColor } = useTheme();
 
   // Password change
   const [currentPassword, setCurrentPassword] = useState('');
@@ -90,6 +92,36 @@ export function SettingsPage() {
                 {user?.created_at ? new Date(user.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '-'}
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* Theme Picker */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 md:p-6">
+          <h3 className="font-semibold text-slate-800 flex items-center gap-2 mb-4">
+            <Palette size={18} className="text-indigo-500" />
+            Menu Color
+          </h3>
+          <div className="grid grid-cols-3 gap-3">
+            {(Object.keys(THEMES) as ThemeColor[]).map(key => {
+              const isActive = themeColor === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setThemeColor(key)}
+                  className={`relative flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                    isActive ? 'border-indigo-500 shadow-md' : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className={`w-full h-10 rounded-lg ${THEME_SWATCHES[key]}`} />
+                  <span className="text-xs font-medium text-slate-700">{THEMES[key].label}</span>
+                  {isActive && (
+                    <div className="absolute top-2 right-2 w-5 h-5 bg-indigo-500 rounded-full flex items-center justify-center">
+                      <Check size={12} className="text-white" />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 

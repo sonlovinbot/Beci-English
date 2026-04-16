@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { BookOpen, Headphones, Settings, User, LogOut, ListMusic, ClipboardCheck } from 'lucide-react';
 import { useAuth } from '../lib/auth';
+import { useTheme } from '../lib/theme';
 
 export type Page = 'audio' | 'listening' | 'listeningTest' | 'reading' | 'progress' | 'settings';
 
@@ -12,6 +13,7 @@ interface SidebarProps {
 
 export function Sidebar({ onClose, currentPage, onNavigate }: SidebarProps) {
   const { user, signOut } = useAuth();
+  const { theme } = useTheme();
 
   const handleSignOut = async () => {
     await signOut();
@@ -25,8 +27,8 @@ export function Sidebar({ onClose, currentPage, onNavigate }: SidebarProps) {
         onClick={() => { onNavigate(page); onClose?.(); }}
         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors text-left ${
           isActive
-            ? 'bg-indigo-600/20 text-indigo-400'
-            : 'hover:bg-slate-800 text-slate-300'
+            ? `${theme.activeItem} ${theme.activeText}`
+            : `${theme.hoverItem} text-slate-300`
         }`}
       >
         {icon}
@@ -36,7 +38,7 @@ export function Sidebar({ onClose, currentPage, onNavigate }: SidebarProps) {
   };
 
   return (
-    <aside className="w-64 bg-slate-900 text-slate-300 h-full flex flex-col shadow-xl md:shadow-none">
+    <aside className={`w-64 ${theme.sidebar} text-slate-300 h-full flex flex-col shadow-xl md:shadow-none`}>
       <div className="p-6 hidden md:block">
         <h1 className="text-2xl font-bold text-white tracking-tight">English City Campus</h1>
       </div>
@@ -49,7 +51,7 @@ export function Sidebar({ onClose, currentPage, onNavigate }: SidebarProps) {
         {navItem('progress', 'My Progress', <User size={20} />)}
       </nav>
 
-      <div className="p-4 border-t border-slate-800 space-y-2">
+      <div className={`p-4 border-t ${theme.sidebarBorder} space-y-2`}>
         {user && (
           <div className="px-4 py-2 text-xs text-slate-500 truncate" title={user.email || ''}>
             {user.email}

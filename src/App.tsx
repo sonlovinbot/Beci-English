@@ -6,10 +6,12 @@ import { ListeningTest } from './components/ListeningTest';
 import { SettingsPage } from './components/SettingsPage';
 import { AuthPage } from './components/AuthPage';
 import { AuthProvider, useAuth } from './lib/auth';
+import { ThemeProvider, useTheme } from './lib/theme';
 import { Menu, X, Loader2 } from 'lucide-react';
 
 function AppContent() {
   const { user, isLoading } = useAuth();
+  const { theme } = useTheme();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState<Page>('audio');
 
@@ -50,11 +52,11 @@ function AppContent() {
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans flex-col md:flex-row">
       {/* Mobile Header */}
-      <div className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center z-20 shadow-md">
+      <div className={`md:hidden ${theme.mobileHeader} text-white p-4 flex justify-between items-center z-20 shadow-md`}>
         <h1 className="text-xl font-bold tracking-tight">English City Campus</h1>
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="p-1 hover:bg-slate-800 rounded-md transition-colors"
+          className="p-1 hover:bg-white/10 rounded-md transition-colors"
         >
           {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
@@ -87,7 +89,9 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <ThemeProvider>
+        <AppContent />
+      </ThemeProvider>
     </AuthProvider>
   );
 }
