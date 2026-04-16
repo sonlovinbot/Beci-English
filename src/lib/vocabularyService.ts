@@ -6,11 +6,14 @@ export interface VocabularyWord {
   word: string;
   phonetic: string | null;
   part_of_speech: string | null;
+  meaning_en: string | null;
   meaning_vi: string | null;
   example_en: string | null;
   example_vi: string | null;
   audio_url: string | null;
   image_url: string | null;
+  synonyms: string[] | null;
+  antonyms: string[] | null;
   source: string;
   srs_level: number;
   next_review_at: string;
@@ -24,11 +27,14 @@ export interface AddWordInput {
   word: string;
   phonetic?: string;
   part_of_speech?: string;
+  meaning_en?: string;
   meaning_vi?: string;
   example_en?: string;
   example_vi?: string;
   audio_url?: string;
   image_url?: string;
+  synonyms?: string[];
+  antonyms?: string[];
   source: string;
 }
 
@@ -72,11 +78,14 @@ export async function addWord(input: AddWordInput): Promise<VocabularyWord | nul
         word: input.word.toLowerCase().trim(),
         phonetic: input.phonetic ?? null,
         part_of_speech: input.part_of_speech ?? null,
+        meaning_en: input.meaning_en ?? null,
         meaning_vi: input.meaning_vi ?? null,
         example_en: input.example_en ?? null,
         example_vi: input.example_vi ?? null,
         audio_url: input.audio_url ?? null,
         image_url: input.image_url ?? null,
+        synonyms: input.synonyms ?? null,
+        antonyms: input.antonyms ?? null,
         source: input.source,
       })
       .select()

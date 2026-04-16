@@ -187,7 +187,10 @@ function AddFromList({ onAdded }: { onAdded: () => void }) {
             enrichWord(inserted.id, {
               phonetic: dict?.phonetic || null,
               audio_url: dict?.audio || null,
+              meaning_en: dict?.meaningEn || null,
               example_en: dict?.example || null,
+              synonyms: dict?.synonyms?.length ? dict.synonyms : null,
+              antonyms: dict?.antonyms?.length ? dict.antonyms : null,
               image_url: img,
             });
           })
@@ -391,8 +394,11 @@ function AddFromOcr({ onAdded }: { onAdded: () => void }) {
         word,
         phonetic: dict?.phonetic || undefined,
         part_of_speech: dict?.partOfSpeech || undefined,
+        meaning_en: dict?.meaningEn || undefined,
         example_en: dict?.example || undefined,
         audio_url: dict?.audio || undefined,
+        synonyms: dict?.synonyms?.length ? dict.synonyms : undefined,
+        antonyms: dict?.antonyms?.length ? dict.antonyms : undefined,
         source: 'ocr',
       });
 
@@ -852,30 +858,88 @@ function ReviewTab({ onDone }: { onDone: () => void }) {
           </div>
 
           <div className="p-6 md:p-8">
+            {/* Word + phonetic + audio (always visible) */}
             <div className="text-center">
               <h3 className="text-3xl md:text-4xl font-bold text-slate-800">{current.word}</h3>
-              {revealed && current.phonetic && (
+              {(current.phonetic || current.audio_url) && (
                 <p className="text-slate-500 mt-2 flex items-center justify-center gap-2">
-                  /{current.phonetic}/
+                  {current.phonetic && <span>/{current.phonetic}/</span>}
                   {current.audio_url && (
-                    <button onClick={playAudio} className="p-1 text-indigo-500 hover:text-indigo-700">
-                      <Volume2 size={16} />
+                    <button
+                      onClick={playAudio}
+                      className="p-1.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-full transition-colors"
+                      title="Phát âm"
+                    >
+                      <Volume2 size={18} />
                     </button>
                   )}
                 </p>
               )}
+              {current.part_of_speech && (
+                <p className="text-xs text-slate-400 italic mt-1">{current.part_of_speech}</p>
+              )}
             </div>
 
+            {/* English hints (always visible — guess the meaning) */}
+            <div className="mt-6 space-y-3">
+              {current.meaning_en && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1">Definition</p>
+                  <p className="text-sm text-slate-700">{current.meaning_en}</p>
+                </div>
+              )}
+
+              {current.example_en && (
+                <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4">
+                  <p className="text-[10px] uppercase tracking-wider text-indigo-400 font-semibold mb-1">Example</p>
+                  <p className="text-sm text-slate-700 italic">"{current.example_en}"</p>
+                </div>
+              )}
+
+              {current.synonyms && current.synonyms.length > 0 && (
+                <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-4">
+                  <p className="text-[10px] uppercase tracking-wider text-emerald-600 font-semibold mb-2">Synonyms</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {current.synonyms.slice(0, 8).map(s => (
+                      <span key={s} className="text-xs bg-white text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded">
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {current.antonyms && current.antonyms.length > 0 && (
+                <div className="bg-rose-50 border border-rose-100 rounded-lg p-4">
+                  <p className="text-[10px] uppercase tracking-wider text-rose-600 font-semibold mb-2">Antonyms</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {current.antonyms.slice(0, 6).map(s => (
+                      <span key={s} className="text-xs bg-white text-rose-700 border border-rose-200 px-2 py-0.5 rounded">
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!current.meaning_en && !current.example_en && !(current.synonyms && current.synonyms.length) && !(current.antonyms && current.antonyms.length) && (
+                <div className="bg-slate-50 border border-dashed border-slate-200 rounded-lg p-6 text-center">
+                  <p className="text-xs text-slate-400">Chưa có thông tin tiếng Anh. Bấm hiện đáp án để xem nghĩa tiếng Việt.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Reveal button or Vietnamese answer */}
             {!revealed && (
-              <div className="mt-8 text-center">
-                <p className="text-slate-400 text-sm mb-3">Bạn có nhớ nghĩa không?</p>
+              <div className="mt-6 text-center">
+                <p className="text-slate-400 text-sm mb-3">Đoán nghĩa rồi bấm để kiểm tra</p>
                 <button
                   onClick={() => setRevealed(true)}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-xl inline-flex items-center gap-2"
                 >
-                  <Eye size={18} /> Hiện đáp án
+                  <Eye size={18} /> Hiện nghĩa tiếng Việt
                 </button>
-                <p className="text-xs text-slate-400 mt-3">Phím tắt: Space</p>
+                <p className="text-xs text-slate-400 mt-2">Phím tắt: Space</p>
               </div>
             )}
 
@@ -886,21 +950,14 @@ function ReviewTab({ onDone }: { onDone: () => void }) {
                   animate={{ opacity: 1, height: 'auto' }}
                   className="mt-6 space-y-3 overflow-hidden"
                 >
-                  <div className="bg-slate-50 rounded-lg p-4 text-center">
-                    {current.part_of_speech && (
-                      <p className="text-xs text-slate-400 italic mb-1">{current.part_of_speech}</p>
+                  {/* Vietnamese meaning */}
+                  <div className="bg-gradient-to-br from-amber-50 to-yellow-50 border-2 border-amber-200 rounded-lg p-4 text-center">
+                    <p className="text-[10px] uppercase tracking-wider text-amber-600 font-semibold mb-1">Nghĩa tiếng Việt</p>
+                    <p className="text-xl font-semibold text-slate-800">{current.meaning_vi || '—'}</p>
+                    {current.example_vi && (
+                      <p className="text-xs text-slate-500 mt-2 italic">→ {current.example_vi}</p>
                     )}
-                    <p className="text-lg font-medium text-slate-800">{current.meaning_vi || '—'}</p>
                   </div>
-
-                  {current.example_en && (
-                    <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
-                      <p className="text-sm text-slate-700 italic">"{current.example_en}"</p>
-                      {current.example_vi && (
-                        <p className="text-xs text-slate-500 mt-1">{current.example_vi}</p>
-                      )}
-                    </div>
-                  )}
 
                   <div className="grid grid-cols-2 gap-3 pt-2">
                     <button

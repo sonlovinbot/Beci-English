@@ -5,7 +5,24 @@ export interface DictionaryResult {
   phonetic: string | null;
   audio: string | null;
   partOfSpeech: string | null;
+  meaningEn: string | null;
   example: string | null;
+  synonyms: string[];
+  antonyms: string[];
+}
+
+interface DictDefinition {
+  definition: string;
+  example?: string;
+  synonyms?: string[];
+  antonyms?: string[];
+}
+
+interface DictMeaning {
+  partOfSpeech: string;
+  definitions: DictDefinition[];
+  synonyms?: string[];
+  antonyms?: string[];
 }
 
 export async function fetchDictionary(word: string): Promise<DictionaryResult | null> {
@@ -19,18 +36,35 @@ export async function fetchDictionary(word: string): Promise<DictionaryResult | 
     const phoneticObj = entry.phonetics?.find((p: { audio?: string }) => p.audio) || entry.phonetics?.[0];
     const audio = phoneticObj?.audio || null;
     const phonetic = entry.phonetic || phoneticObj?.text || null;
-    const firstMeaning = entry.meanings?.[0];
-    const partOfSpeech = firstMeaning?.partOfSpeech || null;
-    const example = firstMeaning?.definitions?.find((d: { example?: string }) => d.example)?.example || null;
 
-    // Normalize audio URL (some are protocol-relative //ssl.gstatic.com/...)
+    const firstMeaning: DictMeaning | undefined = entry.meanings?.[0];
+    const firstDef: DictDefinition | undefined = firstMeaning?.definitions?.[0];
+    const partOfSpeech = firstMeaning?.partOfSpeech || null;
+    const meaningEn = firstDef?.definition || null;
+    const example = firstMeaning?.definitions?.find((d: DictDefinition) => d.example)?.example || null;
+
+    // Aggregate synonyms and antonyms across all meanings + definitions, dedupe
+    const synSet = new Set<string>();
+    const antSet = new Set<string>();
+    (entry.meanings || []).forEach((m: DictMeaning) => {
+      (m.synonyms || []).forEach((s: string) => synSet.add(s));
+      (m.antonyms || []).forEach((s: string) => antSet.add(s));
+      (m.definitions || []).forEach((d: DictDefinition) => {
+        (d.synonyms || []).forEach((s: string) => synSet.add(s));
+        (d.antonyms || []).forEach((s: string) => antSet.add(s));
+      });
+    });
+
     const normalizedAudio = audio ? (audio.startsWith('//') ? `https:${audio}` : audio) : null;
 
     return {
       phonetic,
       audio: normalizedAudio,
       partOfSpeech,
+      meaningEn,
       example,
+      synonyms: [...synSet].slice(0, 8),
+      antonyms: [...antSet].slice(0, 6),
     };
   } catch (err) {
     console.error('Dictionary fetch failed:', err);
@@ -38,8 +72,6 @@ export async function fetchDictionary(word: string): Promise<DictionaryResult | 
   }
 }
 
-// Pexels — requires VITE_PEXELS_API_KEY env var
-// If not configured, returns null and UI falls back to placeholder.
 export async function fetchPexelsImage(query: string): Promise<string | null> {
   const apiKey = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_PEXELS_API_KEY;
   if (!apiKey) return null;
