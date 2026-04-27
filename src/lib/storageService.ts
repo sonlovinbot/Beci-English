@@ -1,6 +1,57 @@
 import { supabase } from './supabase';
 import { pcmBase64ToWavBlob } from './audioUtils';
 
+// Convert WAV blob → base64 (browser-safe, no Buffer)
+async function blobToBase64(blob: Blob): Promise<string> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+async function uploadToBunny(path: string, base64: string, contentType: string): Promise<string | null> {
+  try {
+    const res = await fetch('/api/bunny', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'upload', path, base64, contentType }),
+    });
+    if (!res.ok) {
+      console.error('Bunny upload failed:', res.status, await res.text());
+      return null;
+    }
+    const data = await res.json();
+    return data.url || null;
+  } catch (err) {
+    console.error('Bunny upload exception:', err);
+    return null;
+  }
+}
+
+async function deleteFromBunny(path: string): Promise<boolean> {
+  try {
+    const res = await fetch('/api/bunny', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', path }),
+    });
+    return res.ok;
+  } catch (err) {
+    console.error('Bunny delete exception:', err);
+    return false;
+  }
+}
+
+// Extract Bunny path from full CDN URL (for delete operations)
+function bunnyPathFromUrl(url: string): string | null {
+  // e.g. https://beci-english.b-cdn.net/userId/audio_xxx.wav -> userId/audio_xxx.wav
+  const match = url.match(/^https:\/\/[^/]+\/(.+)$/);
+  return match ? match[1] : null;
+}
+
 export interface AudioGeneration {
   id: string;
   title: string;
@@ -30,30 +81,25 @@ export async function saveGeneration(
       return null;
     }
 
-    // 1. Convert base64 PCM to WAV blob for storage
+    // 1. Convert base64 PCM to WAV blob, then to base64 for transport
     const wavBlob = pcmBase64ToWavBlob(base64Audio);
+    const wavBase64 = await blobToBase64(wavBlob);
     const fileName = `audio_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.wav`;
-    const storagePath = `${user.id}/${fileName}`;
+    const path = `${user.id}/${fileName}`;
 
-    // 2. Upload WAV to Supabase Storage
-    const { error: uploadError } = await supabase.storage
-      .from('audio')
-      .upload(storagePath, wavBlob, {
-        contentType: 'audio/wav',
-        upsert: false,
-      });
-
-    if (uploadError) {
-      console.error('Storage upload failed:', uploadError);
+    // 2. Upload WAV to Bunny CDN (server-side, key stays hidden)
+    const cdnUrl = await uploadToBunny(path, wavBase64, 'audio/wav');
+    if (!cdnUrl) {
+      console.error('Bunny upload failed, audio not saved');
     }
 
-    // 3. Insert row into database
+    // 3. Insert row into database — store full CDN URL (or null on failure)
     const row = {
       title,
       text,
       voice,
       style,
-      audio_storage_path: uploadError ? null : storagePath,
+      audio_storage_path: cdnUrl,
       user_id: user.id,
     };
 
@@ -118,11 +164,18 @@ export async function loadHistory(limit = 20): Promise<AudioGeneration[]> {
 export async function deleteGeneration(id: string, storagePath: string | null): Promise<boolean> {
   try {
     if (storagePath) {
-      const { error: storageError } = await supabase.storage
-        .from('audio')
-        .remove([storagePath]);
-      if (storageError) {
-        console.error('Storage delete failed:', storageError);
+      if (/^https?:\/\//i.test(storagePath)) {
+        // Bunny CDN URL — delete via /api/bunny
+        const path = bunnyPathFromUrl(storagePath);
+        if (path) await deleteFromBunny(path);
+      } else {
+        // Legacy Supabase Storage path
+        const { error: storageError } = await supabase.storage
+          .from('audio')
+          .remove([storagePath]);
+        if (storageError) {
+          console.error('Storage delete failed:', storageError);
+        }
       }
     }
 
@@ -165,9 +218,12 @@ export async function updateGenerationTitle(id: string, title: string): Promise<
 }
 
 /**
- * Get public URL for an audio file in Storage.
+ * Get public URL for an audio file.
+ * - If storagePath is already a full URL (Bunny CDN), return as-is.
+ * - Otherwise treat as legacy Supabase Storage path.
  */
 export function getAudioPublicUrl(storagePath: string): string {
+  if (/^https?:\/\//i.test(storagePath)) return storagePath;
   const { data } = supabase.storage.from('audio').getPublicUrl(storagePath);
   return data.publicUrl;
 }
