@@ -25,8 +25,13 @@ function publicUrl(path: string) {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!STORAGE_ZONE || !STORAGE_PASSWORD || !CDN_HOST) {
+    const missing = [
+      !STORAGE_ZONE && 'BUNNY_STORAGE_ZONE',
+      !STORAGE_PASSWORD && 'BUNNY_STORAGE_PASSWORD',
+      !CDN_HOST && 'BUNNY_CDN_HOST',
+    ].filter(Boolean).join(', ');
     return res.status(500).json({
-      error: 'Bunny storage env vars not configured (BUNNY_STORAGE_ZONE, BUNNY_STORAGE_PASSWORD, BUNNY_CDN_HOST)',
+      error: `Bunny storage env vars not configured: missing ${missing}`,
     });
   }
 

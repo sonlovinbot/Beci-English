@@ -12,7 +12,12 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(binary);
 }
 
-async function uploadToBunny(path: string, base64: string, contentType: string): Promise<string | null> {
+interface BunnyUploadResult {
+  url: string | null;
+  error: string | null;
+}
+
+async function uploadToBunny(path: string, base64: string, contentType: string): Promise<BunnyUploadResult> {
   try {
     const res = await fetch('/api/bunny', {
       method: 'POST',
@@ -20,14 +25,32 @@ async function uploadToBunny(path: string, base64: string, contentType: string):
       body: JSON.stringify({ action: 'upload', path, base64, contentType }),
     });
     if (!res.ok) {
-      console.error('Bunny upload failed:', res.status, await res.text());
-      return null;
+      const text = await res.text();
+      console.error('Bunny upload failed:', res.status, text);
+      // Try to parse JSON error
+      let msg = `HTTP ${res.status}`;
+      try {
+        const j = JSON.parse(text);
+        if (j.error) msg = j.error;
+      } catch {
+        if (text) msg = text.slice(0, 200);
+      }
+      // Hint for common cases
+      if (res.status === 404) {
+        msg = '/api/bunny route not found. Run `vercel dev` locally, or deploy to Vercel.';
+      } else if (res.status === 413) {
+        msg = `File too large for Vercel (>4.5MB). Try shorter audio. (${msg})`;
+      } else if (res.status === 500 && msg.includes('not configured')) {
+        msg = 'Bunny env vars missing. Set BUNNY_STORAGE_ZONE, BUNNY_STORAGE_PASSWORD, BUNNY_CDN_HOST in Vercel.';
+      }
+      return { url: null, error: msg };
     }
     const data = await res.json();
-    return data.url || null;
+    return { url: data.url || null, error: null };
   } catch (err) {
     console.error('Bunny upload exception:', err);
-    return null;
+    const message = err instanceof Error ? err.message : 'Network error';
+    return { url: null, error: message };
   }
 }
 
@@ -88,12 +111,14 @@ export async function saveGeneration(
     const path = `${user.id}/${fileName}`;
 
     // 2. Upload WAV to Bunny CDN (server-side, key stays hidden)
-    const cdnUrl = await uploadToBunny(path, wavBase64, 'audio/wav');
-    if (!cdnUrl) {
-      console.error('Bunny upload failed, audio not saved');
+    const upload = await uploadToBunny(path, wavBase64, 'audio/wav');
+    if (!upload.url) {
+      // Don't create an orphan DB row without audio. Throw so UI sees the error.
+      throw new Error(upload.error || 'Bunny upload failed');
     }
+    const cdnUrl = upload.url;
 
-    // 3. Insert row into database — store full CDN URL (or null on failure)
+    // 3. Insert row into database — store full CDN URL
     const row = {
       title,
       text,
@@ -130,7 +155,8 @@ export async function saveGeneration(
     return data as AudioGeneration;
   } catch (err) {
     console.error('saveGeneration error:', err);
-    return null;
+    // Re-throw so the caller can show a specific error to the user
+    throw err;
   }
 }
 

@@ -68,13 +68,17 @@ export function AudioShadowing() {
     fetchHistory();
   }, []);
 
-  const handleSaveGeneration = async (newTitle: string, newText: string, newVoice: string, newStyle: string, base64Audio: string): Promise<boolean> => {
-    const saved = await saveGeneration(newTitle, newText, newVoice, newStyle, base64Audio);
-    if (saved) {
-      setHistory(prev => [saved, ...prev]);
-      return true;
+  const handleSaveGeneration = async (newTitle: string, newText: string, newVoice: string, newStyle: string, base64Audio: string): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const saved = await saveGeneration(newTitle, newText, newVoice, newStyle, base64Audio);
+      if (saved) {
+        setHistory(prev => [saved, ...prev]);
+        return { ok: true };
+      }
+      return { ok: false, error: 'Save returned no data' };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Unknown error' };
     }
-    return false;
   };
 
   const loadHistoryItem = (item: AudioGeneration) => {
@@ -222,10 +226,10 @@ export function AudioShadowing() {
 
       setAudioUrl(url);
 
-      // Save to Supabase and show error if it fails
-      const saved = await handleSaveGeneration(suggestedTitle, text, voice, effectiveStyle, base64Audio);
-      if (!saved) {
-        setError('Audio generated but failed to save. Check console for details.');
+      // Save to Supabase and show specific error if it fails
+      const result = await handleSaveGeneration(suggestedTitle, text, voice, effectiveStyle, base64Audio);
+      if (!result.ok) {
+        setError(`Audio generated but not saved: ${result.error || 'unknown error'}`);
       }
     } catch (err) {
       setError('Failed to generate audio. Please try again.');
